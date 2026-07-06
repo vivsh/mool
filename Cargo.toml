@@ -1,0 +1,32 @@
+[workspace]
+members = [
+  "mool",
+  "mool-macros",
+  "mool-macros-impl",
+]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/vivsh/mool"
+documentation = "https://docs.rs/mool"
+
+[workspace.dependencies]
+chrono = { version = "0.4.41", features = ["serde"] }
+darling = "0.20"
+gaman = { git = "https://github.com/vivsh/gaman.git", default-features = false, features = ["native", "macros"] }
+heck = "0.4"
+indexmap = { version = "2.10.0", features = ["serde"] }
+proc-macro2 = "1"
+quote = "1"
+schemars = "1.0.4"
+serde = { version = "1.0.219", features = ["derive", "rc", "serde_derive"] }
+serde_json = { version = "1.0.140", features = ["indexmap", "raw_value", "preserve_order"] }
+sqlx = { version = "^0.8.6", features = ["chrono", "postgres", "sqlite", "runtime-tokio", "uuid", "json"] }
+syn = { version = "2", features = ["full"] }
+thiserror = "2.0.12"
+tokio = { version = "1.46.1", features = ["full"] }
+twox-hash = "1.6"
+url = "2.5.4"
+uuid = { version = "1.17.0", features = ["v4", "v7", "serde"] }

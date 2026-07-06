@@ -1,0 +1,36 @@
+[package]
+name = "mool"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+documentation.workspace = true
+description = "A source-first Rust database toolkit for typed SQL queries, migrations, and model metadata"
+readme = "../README.md"
+
+[package.metadata.docs.rs]
+features = ["sqlite", "migrations"]
+no-default-features = true
+
+[features]
+default = []
+postgres = ["sqlx/postgres", "gaman/postgres"]
+mysql = ["sqlx/mysql"]
+sqlite = ["sqlx/sqlite", "gaman/sqlite"]
+migrations = ["gaman/cli"]
+mock = []
+
+[dependencies]
+chrono.workspace = true
+gaman.workspace = true
+indexmap.workspace = true
+mool-macros = { path = "../mool-macros", version = "0.1.0" }
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+twox-hash.workspace = true
+url.workspace = true
+uuid.workspace = true
