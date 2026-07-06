@@ -124,7 +124,7 @@ async fn published<S: db::DBSession>(session: &mut S) -> Result<Vec<Post>, db::D
 | Queries | `select`, writes, subqueries, CTEs, variables, functions, aggregates, windows. |
 | Relations | Joined records, explicit references, backrefs, many-to-many predicates, prefetch. |
 | Sessions | One execution shape for pools, transactions, raw SQL, and mocks. |
-| Migrations | Gaman schema/migration re-exports plus Mool registries. |
+| Migrations | [Gaman](https://github.com/vivsh/gaman) schema/migration re-exports plus Mool registries. |
 
 Crates:
 
@@ -359,8 +359,9 @@ assignments, and `over(window())` where the backend supports windows.
 
 ## Migrations
 
-With `migrations`, Mool re-exports Gaman schema/migration tools and adds
-registries for root and crate-owned migration sources.
+With `migrations`, Mool re-exports [Gaman](https://github.com/vivsh/gaman)
+schema/migration tools and adds registries for root and crate-owned migration
+sources.
 
 ```rust
 fn schema() -> db::Schema {
