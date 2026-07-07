@@ -1,6 +1,6 @@
 [package]
 name = "mool-macros"
-version = "0.1.0"
+version = "0.1.2"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -11,7 +11,7 @@ description = "Derive macros for the Mool database toolkit"
 proc-macro = true
 
 [dependencies]
-mool-macros-impl = { path = "../mool-macros-impl", version = "0.1.0" }
+mool-macros-impl = { path = "../mool-macros-impl", version = "0.1.1" }
 proc-macro-crate = "3.2"
 proc-macro2.workspace = true
 quote.workspace = true

@@ -14,6 +14,8 @@ pub mod relations;
 mod statement;
 pub mod types;
 
+extern crate self as mool;
+
 #[cfg(any(test, debug_assertions, feature = "mock"))]
 pub mod mock;
 

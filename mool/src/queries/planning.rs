@@ -45,6 +45,13 @@ impl QueryScope {
         self.plan_select::<T>(Some((0, 1)), dialect)
     }
 
+    pub(super) fn plan_one<T>(&self, dialect: Dialect) -> Result<QueryPlan, QueryError>
+    where
+        T: Record + 'static,
+    {
+        self.plan_select::<T>(Some((0, 2)), dialect)
+    }
+
     pub(super) fn plan_slice<T>(
         &self,
         offset: usize,

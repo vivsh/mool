@@ -1,0 +1,5 @@
+error: storage = "int" requires every variant to define code
+  --> tests/compile/fail/sql_enum_int_missing_code.rs:10:5
+   |
+10 |     Published,
+   |     ^^^^^^^^^

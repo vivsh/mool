@@ -256,7 +256,13 @@ fn gen_column(
         });
     }
     Some(quote! {
-        table = table.column_from_type::<#ty>(dialect, #name, |c| {
+        let column_desc = <#ty as #crate_path::ColumnType>::column_desc(dialect);
+        table = table.column(#name, column_desc.sql_type, |c| {
+            let c = if column_desc.nullable {
+                c.nullable()
+            } else {
+                c.not_null()
+            };
             #body
         });
     })
@@ -275,9 +281,10 @@ fn gen_nullable(field: &FieldMeta, explicit_type: bool) -> Option<proc_macro2::T
 }
 
 fn gen_reference(field: &crate::schemable::FieldMeta) -> Option<proc_macro2::TokenStream> {
-    let references = field.column.references.as_ref()?.value();
+    let reference = field.column.reference.as_ref()?;
+    let references = reference.target.as_ref()?;
     let (table, column) = references.rsplit_once('.')?;
-    let name = field.column.references_name.as_ref().map(|lit| lit.value());
+    let name = reference.name.clone();
     Some(match name {
         Some(name) => quote! {
             let c = c.references_named(#name, #table, #column);

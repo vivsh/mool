@@ -298,6 +298,9 @@ fn gen_references(
             }
 
             let reference = field.column.reference.as_ref()?;
+            if !reference.is_join_reference() {
+                return None;
+            }
             if let Some(marker) = reference.relation.as_ref() {
                 return Some(quote! {
                     let relation = <#marker as #crate_path::Backref>::meta();
@@ -492,7 +495,12 @@ pub(super) fn is_flatten(field: &FieldMeta) -> bool {
 
 /// Check if field is a reference (column only).
 pub(super) fn is_reference(field: &FieldMeta) -> bool {
-    field.column.reference.is_some() || field.column.backref.is_some()
+    field
+        .column
+        .reference
+        .as_ref()
+        .is_some_and(|reference| reference.is_join_reference())
+        || field.column.backref.is_some()
 }
 
 fn is_bindable(field: &FieldMeta) -> bool {

@@ -132,6 +132,9 @@ Crates:
 - `mool-macros`: derive macros re-exported by `mool`
 - `mool-macros-impl`: internal macro implementation
 
+DB-free examples live under `mool/examples/` and cover basic planning, filters,
+relations, enums, migrations embedding, and mock testing.
+
 ## Models And Records
 
 Use `Model` for table-backed rows:
@@ -146,6 +149,29 @@ struct Post {
     title: String,
     published: bool,
 }
+```
+
+Foreign-key columns use the same `reference` key as joined records, but with a
+target value:
+
+```rust
+#[derive(Debug, Clone, db::Model)]
+#[table(name = "posts")]
+struct Post {
+    #[column(primary_key)]
+    id: i64,
+    #[column(reference = "users.id")]
+    author_id: i64,
+    title: String,
+    published: bool,
+}
+```
+
+Use the structured form when the database constraint needs a stable name:
+
+```rust
+#[column(reference(target = "users.id", name = "posts_author_id_fkey"))]
+author_id: i64,
 ```
 
 Use `Record` for projections, patches, joined output, and write-only rows:
@@ -268,7 +294,7 @@ let rows = db::from(&Post::table())
 
 ## Relations
 
-Joined records describe references in the output type:
+Joined records use the same `reference` key with join metadata:
 
 ```rust
 #[derive(Debug, Clone, db::Model)]
@@ -364,6 +390,9 @@ schema/migration tools and adds registries for root and crate-owned migration
 sources.
 
 ```rust
+static MIGRATIONS: db::EmbeddedMigrations =
+    db::embedded_migrations!("migrations");
+
 fn schema() -> db::Schema {
     db::schema(db::Dialect::Postgres)
         .model::<Post>()
@@ -371,8 +400,12 @@ fn schema() -> db::Schema {
 }
 
 let mut registry = db::MigrationRegistry::new();
+registry.register(db::root_migration(&MIGRATIONS))?;
 registry.register_schema(db::root_schema(schema))?;
 ```
+
+Mool owns the app-facing `embedded_migrations!` macro. Gaman owns the runtime
+`EmbeddedMigrations` type and migration engine.
 
 Use `db::schema(...)` instead of raw `SchemaBuilder` when models include native
 enum fields.
@@ -401,13 +434,25 @@ let rows = db::from(&Post::table())
 
 ```sh
 cargo test --workspace
-cargo check -p mool --no-default-features --features sqlite
-cargo check -p mool --no-default-features --features postgres
-cargo check -p mool --no-default-features --features mysql
-cargo check -p mool --no-default-features --features "sqlite migrations"
-cargo check -p mool --no-default-features --features "postgres migrations"
+cargo test -p mool --no-default-features --features sqlite
+cargo test -p mool --no-default-features --features postgres
+cargo test -p mool --no-default-features --features mysql
+cargo test -p mool --no-default-features --features "sqlite migrations"
+cargo test -p mool --no-default-features --features "postgres migrations"
+cargo check -p mool --release --no-default-features --features sqlite
+cargo check -p mool --release --no-default-features --features "sqlite mock"
+cargo check -p mool --examples --no-default-features --features "sqlite mock migrations"
 cargo clippy --workspace
+cargo package -p mool-macros
+cargo package -p mool
 ```
+
+The Cargo test matrix is DB-free. SQL generation is covered by an offline
+golden conformance suite across query shapes, bind metadata, and dialect
+differences for Postgres, SQLite, and MySQL. Macro contracts are checked with
+`trybuild`, public examples compile without databases, and
+`scripts/confidence-check.sh` runs the full local confidence matrix including
+the release-only mock feature gate.
 
 ## Boundary
 

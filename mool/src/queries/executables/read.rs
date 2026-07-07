@@ -134,7 +134,7 @@ where
 
     /// Renders SQL and parameter metadata without executing the query.
     pub fn plan(&self, dialect: Dialect) -> Result<QueryPlan, QueryError> {
-        self.scope.plan_first::<T>(dialect)
+        self.scope.plan_one::<T>(dialect)
     }
 
     /// Executes this query and requires exactly one row.
@@ -144,8 +144,20 @@ where
         S: DBSession,
     {
         let stmt = statement_from_plan(self.plan(Dialect::active())?, Arguments::default())?;
-        session.fetch_one(stmt).await
+        let rows = session.fetch_all(stmt).await?;
+        exactly_one(rows)
     }
+}
+
+fn exactly_one<T>(rows: Vec<T>) -> Result<T, DbError> {
+    let mut rows = rows.into_iter();
+    let Some(row) = rows.next() else {
+        return Err(DbError::DoesNotExist);
+    };
+    if rows.next().is_some() {
+        return Err(DbError::MultipleObjects);
+    }
+    Ok(row)
 }
 
 impl<T> First<T>

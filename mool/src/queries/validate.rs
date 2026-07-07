@@ -21,7 +21,10 @@ pub(super) fn validate_table_parts(
     schema: Option<&'static str>,
     table: &'static str,
 ) -> Result<(), QueryError> {
-    if source.data.name.as_ref() != table || source.data.schema.as_deref() != schema {
+    let name_matches = source.data.name.as_ref() == table;
+    let schema_matches = source.data.schema.as_deref() == schema
+        || (schema.is_none() && source.data.schema.is_some());
+    if !name_matches || !schema_matches {
         return Err(QueryError::TableMismatch {
             expected: table_name(schema, table),
             got: table_name(source.data.schema.as_deref(), source.data.name.as_ref()),
@@ -248,6 +251,11 @@ pub(super) fn validate_expr_owners(
             validate_source_column(rhs)
         }
         ExprNode::InList { left, values } => {
+            if values.is_empty() {
+                return Err(QueryError::BindError(
+                    "IN list requires at least one value".to_string(),
+                ));
+            }
             validate_expr_owners(left, source, references, root_alias, allow_references)?;
             for value in values {
                 validate_expr_owners(value, source, references, root_alias, allow_references)?;

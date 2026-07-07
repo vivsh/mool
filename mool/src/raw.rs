@@ -1,12 +1,14 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::{QueryError, Statement};
 use crate::argvalue::ArgValue;
 use crate::commons::{Arguments, Row};
 use crate::executor::{DBSession, DbError};
-use crate::placeholders::{Dialect, has_named_placeholder, resolve_placeholders};
+use crate::placeholders::{
+    Dialect, PlaceholderIter, PlaceholderPart, has_named_placeholder, resolve_placeholders,
+};
 
-/// Builder for raw SQL with Vyuh named-bind support.
+/// Builder for raw SQL with Mool named-bind support.
 pub struct RawQuery {
     sql: String,
     args: Arguments<'static>,
@@ -41,20 +43,32 @@ impl RawQuery {
         self
     }
 
-    fn into_statement(mut self) -> Result<Statement, QueryError> {
+    /// Renders this raw query into a statement for the requested placeholder dialect.
+    pub fn to_statement(mut self, dialect: Dialect) -> Result<Statement, QueryError> {
         if let Some(err) = self.error {
             return Err(err);
         }
         if self.named_args.is_empty() && !has_named_placeholder(&self.sql) {
             return Ok(Statement::new(&self.sql, self.args));
         }
-        let final_sql = resolve_placeholders(
-            &self.sql,
-            &mut self.args,
-            &self.named_args,
-            Dialect::active(),
-        )?;
+        self.validate_used_binds()?;
+        let final_sql = resolve_placeholders(&self.sql, &mut self.args, &self.named_args, dialect)?;
         Ok(Statement::new(&final_sql, self.args))
+    }
+
+    fn validate_used_binds(&self) -> Result<(), QueryError> {
+        if self.named_args.is_empty() {
+            return Ok(());
+        }
+        let used = named_placeholders(&self.sql);
+        if let Some(name) = self.named_args.keys().find(|name| !used.contains(*name)) {
+            return Err(QueryError::UnusedBinding(name.clone()));
+        }
+        Ok(())
+    }
+
+    fn into_statement(self) -> Result<Statement, QueryError> {
+        self.to_statement(Dialect::active())
     }
 
     pub async fn execute(self, session: &mut impl DBSession) -> Result<u64, DbError> {
@@ -95,4 +109,13 @@ impl RawQuery {
         let row: (T,) = session.fetch_one(stmt).await?;
         Ok(row.0)
     }
+}
+
+fn named_placeholders(sql: &str) -> HashSet<String> {
+    PlaceholderIter::new(sql)
+        .filter_map(|part| match part {
+            PlaceholderPart::Placeholder(name) => Some(name.to_string()),
+            PlaceholderPart::Sql(_) => None,
+        })
+        .collect()
 }

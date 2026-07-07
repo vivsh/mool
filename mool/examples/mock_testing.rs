@@ -1,0 +1,25 @@
+#[cfg(any(debug_assertions, feature = "mock"))]
+use mool as db;
+
+#[cfg(any(debug_assertions, feature = "mock"))]
+use db::DBSession;
+
+#[cfg(any(debug_assertions, feature = "mock"))]
+#[tokio::main]
+async fn main() -> Result<(), db::DbError> {
+    let mut session = db::mock::MockDBSession::new();
+    session.plan_execute_ok("INSERT", 1);
+
+    let rows = session
+        .execute(db::Statement::from_str(
+            "INSERT INTO posts (title) VALUES (?)",
+        ))
+        .await?;
+
+    assert_eq!(rows, 1);
+    assert_eq!(session.recorded.len(), 1);
+    Ok(())
+}
+
+#[cfg(not(any(debug_assertions, feature = "mock")))]
+fn main() {}

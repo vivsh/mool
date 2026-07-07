@@ -1,0 +1,5 @@
+error: column sql_enum cannot be combined with type
+  --> tests/compile/fail/model_sql_enum_conflicting_type.rs:15:5
+   |
+15 |     #[column(sql_enum, type = "text")]
+   |     ^

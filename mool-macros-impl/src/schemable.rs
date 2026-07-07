@@ -55,8 +55,6 @@ static COLUMN_KEYS: &[&str] = &[
     "insertable",
     "updatable",
     "default",
-    "references",
-    "references_name",
     "check",
     "index",
     "index_name",
@@ -179,6 +177,8 @@ impl FromMeta for EnumWrapper {
 /// Reference specification for foreign key relationships
 #[derive(Debug, Clone, Default)]
 pub struct ReferenceSpec {
+    pub target: Option<String>,
+    pub name: Option<String>,
     pub from: Option<String>,
     pub to: Option<String>,
     pub join: Option<String>,
@@ -242,6 +242,13 @@ impl FromMeta for ReferenceSpec {
         Ok(ReferenceSpec::default())
     }
 
+    fn from_expr(expr: &Expr) -> darling::Result<Self> {
+        Ok(ReferenceSpec {
+            target: Some(lit_str_value(expr)?),
+            ..ReferenceSpec::default()
+        })
+    }
+
     fn from_list(items: &[darling::ast::NestedMeta]) -> darling::Result<Self> {
         let mut spec = ReferenceSpec::default();
         for item in items {
@@ -289,7 +296,21 @@ fn parse_reference_name_value(
         spec.join = Some(value);
         return Ok(());
     }
+    if name_value.path.is_ident("target") {
+        spec.target = Some(value);
+        return Ok(());
+    }
+    if name_value.path.is_ident("name") {
+        spec.name = Some(value);
+        return Ok(());
+    }
     Err(darling::Error::custom("unknown reference argument").with_span(name_value))
+}
+
+impl ReferenceSpec {
+    pub fn is_join_reference(&self) -> bool {
+        self.target.is_none()
+    }
 }
 
 fn lit_str_value(expr: &Expr) -> darling::Result<String> {
@@ -609,10 +630,6 @@ pub struct ColumnAttrs {
 
     #[darling(default)]
     pub default: Option<LitStr>,
-    #[darling(default)]
-    pub references: Option<LitStr>,
-    #[darling(default)]
-    pub references_name: Option<LitStr>,
     #[darling(default)]
     pub check: Option<LitStr>,
 

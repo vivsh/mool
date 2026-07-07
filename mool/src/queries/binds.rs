@@ -34,8 +34,22 @@ pub(super) fn statement_from_plan(
 }
 
 pub(super) fn finish_plan(plan: QueryPlan) -> Result<QueryPlan, QueryError> {
+    validate_missing_binds(&plan)?;
     validate_unused_binds(&plan)?;
     Ok(plan)
+}
+
+fn validate_missing_binds(plan: &QueryPlan) -> Result<(), QueryError> {
+    for (name, spec) in &plan.params {
+        if spec.source == ParamSource::Var && !plan.values.contains_key(name) {
+            return Err(QueryError::MissingBinding(
+                spec.display_name
+                    .clone()
+                    .unwrap_or_else(|| spec.name.clone()),
+            ));
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn validate_unused_binds(plan: &QueryPlan) -> Result<(), QueryError> {

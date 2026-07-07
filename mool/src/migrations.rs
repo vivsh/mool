@@ -7,13 +7,13 @@ use thiserror::Error;
 #[cfg(feature = "migrations")]
 pub use gaman::EmbeddedMigrations;
 pub use gaman::core::Dialect;
-#[cfg(feature = "migrations")]
-pub use gaman::embedded_migrations;
 pub use gaman::schema::{
     Column, ColumnDesc, ColumnRef, ColumnType, Constraint, FunctionDef, Index, IntoTable,
     SchemaLoadError, Table,
 };
 pub use gaman::schema::{Schema, SchemaBuilder, TableBuilder};
+#[cfg(feature = "migrations")]
+pub use mool_macros::embedded_migrations;
 
 /// A crate-level migration history registered through a bundle.
 #[cfg(feature = "migrations")]
