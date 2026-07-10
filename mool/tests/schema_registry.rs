@@ -6,11 +6,17 @@ use common::{Post, User};
 use mool as db;
 
 fn root_schema() -> db::Schema {
-    db::schema(db::Dialect::Postgres).model::<User>().build()
+    db::schema(db::Dialect::Postgres)
+        .model::<User>()
+        .build()
+        .expect("valid root test schema")
 }
 
 fn crate_schema() -> db::Schema {
-    db::schema(db::Dialect::Postgres).model::<Post>().build()
+    db::schema(db::Dialect::Postgres)
+        .model::<Post>()
+        .build()
+        .expect("valid crate test schema")
 }
 
 /// Verifies root and crate schema sources build the expected namespace-specific schemas.

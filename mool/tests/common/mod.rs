@@ -82,6 +82,7 @@ pub fn table<'a>(schema: &'a db::Schema, name: &str) -> &'a db::Table {
 #[derive(Debug, Clone, PartialEq, db::Model)]
 #[table(name = "users")]
 pub struct User {
+    #[column(primary_key)]
     pub id: i64,
     #[column(unique, index)]
     pub email: String,

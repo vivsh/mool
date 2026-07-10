@@ -99,14 +99,12 @@ impl SqlSchemaBuilder {
         self
     }
 
-    /// Builds schema metadata.
-    pub fn build(self) -> Schema {
+    /// Builds validated schema metadata for the selected dialect.
+    ///
+    /// Returns a schema-loading error when the assembled metadata is invalid
+    /// for that dialect.
+    pub fn build(self) -> Result<Schema, crate::SchemaLoadError> {
         self.inner.build()
-    }
-
-    /// Builds and validates schema metadata.
-    pub fn build_checked(self) -> Result<Schema, crate::SchemaLoadError> {
-        self.inner.build_checked()
     }
 }
 

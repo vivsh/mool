@@ -18,13 +18,14 @@ struct Post {
     status: PostStatus,
 }
 
-fn main() -> Result<(), db::QueryError> {
+fn main() -> Result<(), db::SchemaLoadError> {
     let posts = Post::table();
     let plan = db::from(&posts)
         .filter(posts.status.eq(db::val(PostStatus::Published)))
         .all::<Post>()
-        .plan(db::queries::Dialect::Postgres)?;
-    let schema = db::schema(db::Dialect::Postgres).model::<Post>().build();
+        .plan(db::queries::Dialect::Postgres)
+        .expect("valid enum query");
+    let schema = db::schema(db::Dialect::Postgres).model::<Post>().build()?;
 
     assert!(plan.sql.contains("post.status = $1"));
     assert!(schema.tables["posts"].constraints.iter().any(|constraint| {

@@ -471,7 +471,8 @@ fn enum_golden_queries_cover_typed_filters_and_schema_metadata() {
     let schema = db::schema(db::Dialect::Postgres)
         .model::<EnumPost>()
         .model::<NativeEnumPost>()
-        .build();
+        .build()
+        .expect("valid enum schema");
     let enum_posts = common::table(&schema, "enum_posts");
     assert_eq!(col(enum_posts, "status").col_type, "text");
     assert_eq!(col(enum_posts, "priority").col_type, "smallint");

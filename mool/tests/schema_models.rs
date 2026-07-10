@@ -16,6 +16,15 @@ struct CatalogItem {
     price_cents: i64,
 }
 
+#[derive(Debug, Clone, db::Model)]
+#[table(name = "invalid_references")]
+struct InvalidReference {
+    #[column(primary_key)]
+    id: i64,
+    #[column(reference = "missing.id")]
+    missing_id: i64,
+}
+
 /// Verifies generated table metadata used by schema and query generation.
 #[test]
 fn model_derive_generates_table_metadata() {
@@ -79,20 +88,39 @@ fn schema_builder_collects_model_tables() {
     let schema = db::schema(db::Dialect::Postgres)
         .model::<User>()
         .model::<Post>()
-        .build();
+        .build()
+        .expect("valid model schema");
 
     let users = common::table(&schema, "users");
     let posts = common::table(&schema, "posts");
 
     assert_eq!(col(users, "email").col_type, "text");
     assert_eq!(col(posts, "author_id").col_type, "bigint");
-    assert_eq!(col(posts, "created_at").col_type, "timestamptz");
+    assert_eq!(
+        col(posts, "created_at").col_type,
+        "timestamp with time zone"
+    );
     assert!(col(posts, "subtitle").nullable);
     assert_eq!(posts.foreign_keys.len(), 1);
     assert_eq!(posts.foreign_keys[0].name, "posts_author_id_fkey");
     assert_eq!(posts.foreign_keys[0].columns, vec!["author_id"]);
     assert_eq!(posts.foreign_keys[0].to_table, "users");
     assert_eq!(posts.foreign_keys[0].to_columns, vec!["id"]);
+}
+
+/// Verifies enum-aware schema building exposes dialect validation failures.
+#[test]
+fn schema_builder_returns_validation_errors() {
+    let error = db::schema(db::Dialect::Postgres)
+        .model::<InvalidReference>()
+        .build()
+        .expect_err("invalid foreign key must fail schema validation");
+
+    assert!(
+        error
+            .to_string()
+            .contains("referenced table missing not found")
+    );
 }
 
 /// Verifies field-level index, unique, and check metadata are preserved.

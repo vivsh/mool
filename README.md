@@ -393,7 +393,7 @@ sources.
 static MIGRATIONS: db::EmbeddedMigrations =
     db::embedded_migrations!("migrations");
 
-fn schema() -> db::Schema {
+fn schema() -> Result<db::Schema, db::SchemaLoadError> {
     db::schema(db::Dialect::Postgres)
         .model::<Post>()
         .build()

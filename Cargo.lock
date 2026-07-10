@@ -490,14 +490,13 @@ dependencies = [
 
 [[package]]
 name = "gaman"
-version = "0.3.19"
+version = "0.3.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0cf848d85b1e816b984b2fa09c63b2ec5c32571c24bcfcb7744f0899dfb7621"
+checksum = "9474c7bc379adbdd4f0b181e59fe2a386a08596d500d710b1409f2b4528869f9"
 dependencies = [
  "argh",
  "dotenvy",
  "gaman-core",
- "gaman-macros",
  "serde",
  "serde_yaml",
  "sqlx",
@@ -507,27 +506,16 @@ dependencies = [
 
 [[package]]
 name = "gaman-core"
-version = "0.3.19"
+version = "0.3.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e88754bd2423948fafbdb155433bd765afdc370eadcc3e667892e1648988347b"
+checksum = "fc9ac3c2d4116cd32c90acc59df89c02c5de104909fc90a1afd74448ce193b98"
 dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2",
  "sqlparser",
  "thiserror",
-]
-
-[[package]]
-name = "gaman-macros"
-version = "0.3.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7279d173dd21681ebfd78b40a245051ed82c44c124b6bebf06728d862b2a2173"
-dependencies = [
- "darling",
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -901,7 +889,7 @@ dependencies = [
 
 [[package]]
 name = "mool"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "gaman",
