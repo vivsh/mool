@@ -159,11 +159,11 @@ fn gen_into_table(
     let foreign_keys = parsed.container.foreign_keys.iter().map(gen_foreign_key);
 
     quote! {
-        impl #impl_generics #crate_path::IntoTable for #ident #ty_generics #where_clause {
+        impl #impl_generics #crate_path::schema::IntoTable for #ident #ty_generics #where_clause {
             fn into_table(
-                dialect: &#crate_path::Dialect,
-            ) -> #crate_path::Table {
-                let mut table = #crate_path::TableBuilder::new(#table_name);
+                dialect: &#crate_path::gaman::core::Dialect,
+            ) -> #crate_path::schema::Table {
+                let mut table = #crate_path::schema::TableBuilder::new(#table_name);
                 #schema_tokens
                 #(#columns)*
                 #primary_key
@@ -256,7 +256,7 @@ fn gen_column(
         });
     }
     Some(quote! {
-        let column_desc = <#ty as #crate_path::ColumnType>::column_desc(dialect);
+        let column_desc = <#ty as #crate_path::schema::ColumnType>::column_desc(dialect);
         table = table.column(#name, column_desc.sql_type, |c| {
             let c = if column_desc.nullable {
                 c.nullable()

@@ -4,18 +4,19 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-cargo test --workspace
+cargo test --workspace --no-default-features --features mool/sqlite
 cargo test -p mool --no-default-features --features sqlite
 cargo test -p mool --no-default-features --features postgres
 cargo test -p mool --no-default-features --features mysql
+cargo test -p mool --no-default-features --features mariadb
 cargo test -p mool --no-default-features --features "sqlite migrations"
 cargo test -p mool --no-default-features --features "postgres migrations"
 cargo check -p mool --release --no-default-features --features sqlite
 cargo check -p mool --release --no-default-features --features "sqlite mock"
 cargo check -p mool --examples --no-default-features --features "sqlite mock migrations"
-cargo clippy --workspace
+cargo clippy -p mool --no-deps --no-default-features --features sqlite -- -D warnings
 cargo package -p mool-macros
-cargo package -p mool
+cargo package -p mool --features sqlite
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -31,7 +32,7 @@ mool = { path = "$ROOT/mool", default-features = false, features = ["sqlite"] }
 EOF
 cat >"$tmp/src/main.rs" <<'EOF'
 fn main() {
-    let _ = mool::mock::MockDBSession::new();
+    let _ = mool::mock::MockDbSession::new();
 }
 EOF
 

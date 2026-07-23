@@ -64,7 +64,7 @@ where
     );
 }
 
-pub fn col<'a>(table: &'a db::Table, name: &str) -> &'a db::Column {
+pub fn col<'a>(table: &'a db::schema::Table, name: &str) -> &'a db::schema::Column {
     table
         .columns
         .iter()
@@ -72,7 +72,7 @@ pub fn col<'a>(table: &'a db::Table, name: &str) -> &'a db::Column {
         .unwrap_or_else(|| panic!("missing column {name} on {}", table.name))
 }
 
-pub fn table<'a>(schema: &'a db::Schema, name: &str) -> &'a db::Table {
+pub fn table<'a>(schema: &'a db::schema::Schema, name: &str) -> &'a db::schema::Table {
     schema
         .tables
         .get(name)
@@ -275,6 +275,7 @@ pub struct ArrayPost {
     pub scores: Option<Vec<i64>>,
 }
 
+#[cfg(feature = "postgres")]
 #[derive(Debug, Clone, db::Filterable)]
 #[filter(model = Post)]
 pub struct PostFilter {
@@ -375,7 +376,7 @@ impl db::DbExpression<String> for LowerTitle {
 pub struct SearchRank;
 
 impl db::DbFunction<f64> for SearchRank {
-    fn name(&self, _dialect: db::queries::Dialect) -> Result<Cow<'static, str>, db::QueryError> {
+    fn name(&self) -> Result<Cow<'static, str>, db::QueryError> {
         Ok(Cow::Borrowed("search_rank"))
     }
 }

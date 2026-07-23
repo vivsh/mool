@@ -23,7 +23,8 @@ pub fn generate(parsed: &ParsedSqlEnum, crate_path: &TokenStream) -> TokenStream
     let storage = storage_tokens(parsed.storage, crate_path);
     let common = common_impl(parsed, crate_path);
     let int_impl = int_impl(parsed, crate_path);
-    let sqlx_impls = sqlx_impls(parsed);
+    let sqlx_impls = sqlx_impls(parsed, crate_path);
+    let postgres_array = postgres_array_impl(parsed, crate_path);
     let column_type = column_type_impl(parsed, crate_path);
 
     quote! {
@@ -66,7 +67,25 @@ pub fn generate(parsed: &ParsedSqlEnum, crate_path: &TokenStream) -> TokenStream
         #common
         #int_impl
         #sqlx_impls
+        #postgres_array
         #column_type
+    }
+}
+
+fn postgres_array_impl(parsed: &ParsedSqlEnum, crate_path: &TokenStream) -> TokenStream {
+    let ident = &parsed.ident;
+    match parsed.storage {
+        Storage::Int => {
+            let repr = repr_ty(parsed.repr);
+            quote! { #crate_path::__mool_impl_sql_enum_pg_array!(#ident, int, #repr); }
+        }
+        Storage::NativePostgres => {
+            let array_name = format!("_{}", parsed.sql_name);
+            quote! { #crate_path::__mool_impl_sql_enum_pg_array!(#ident, native, #array_name); }
+        }
+        Storage::Text | Storage::NativeMysql => {
+            quote! { #crate_path::__mool_impl_sql_enum_pg_array!(#ident, text); }
+        }
     }
 }
 
@@ -88,11 +107,11 @@ fn common_impl(parsed: &ParsedSqlEnum, crate_path: &TokenStream) -> TokenStream 
                 Self::try_from_sql_str(value)
             }
 
-            fn sql_column_type(dialect: #crate_path::Dialect) -> String {
+            fn sql_column_type(dialect: #crate_path::gaman::core::Dialect) -> String {
                 #sql_column_type
             }
 
-            fn sql_check_expr(column: &str, dialect: #crate_path::Dialect) -> Option<String> {
+            fn sql_check_expr(column: &str, dialect: #crate_path::gaman::core::Dialect) -> Option<String> {
                 #check_expr
             }
         }
@@ -140,84 +159,84 @@ fn int_impl(parsed: &ParsedSqlEnum, crate_path: &TokenStream) -> TokenStream {
     }
 }
 
-fn sqlx_impls(parsed: &ParsedSqlEnum) -> TokenStream {
-    generic_sqlx_impl(parsed)
+fn sqlx_impls(parsed: &ParsedSqlEnum, crate_path: &TokenStream) -> TokenStream {
+    generic_sqlx_impl(parsed, crate_path)
 }
 
-fn generic_sqlx_impl(parsed: &ParsedSqlEnum) -> TokenStream {
+fn generic_sqlx_impl(parsed: &ParsedSqlEnum, crate_path: &TokenStream) -> TokenStream {
     let ident = &parsed.ident;
     let delegate = delegate_ty(parsed);
-    let encode = generic_encode(parsed);
-    let decode = generic_decode(parsed);
+    let encode = generic_encode(parsed, crate_path);
+    let decode = generic_decode(parsed, crate_path);
     quote! {
-        impl<DB> ::sqlx::Type<DB> for #ident
+        impl<DB> #crate_path::sqlx::Type<DB> for #ident
         where
-            DB: ::sqlx::Database,
-            #delegate: ::sqlx::Type<DB>,
+            DB: #crate_path::sqlx::Database,
+            #delegate: #crate_path::sqlx::Type<DB>,
         {
-            fn type_info() -> <DB as ::sqlx::Database>::TypeInfo {
-                <#delegate as ::sqlx::Type<DB>>::type_info()
+            fn type_info() -> <DB as #crate_path::sqlx::Database>::TypeInfo {
+                <#delegate as #crate_path::sqlx::Type<DB>>::type_info()
             }
 
-            fn compatible(ty: &<DB as ::sqlx::Database>::TypeInfo) -> bool {
-                <#delegate as ::sqlx::Type<DB>>::compatible(ty)
+            fn compatible(ty: &<DB as #crate_path::sqlx::Database>::TypeInfo) -> bool {
+                <#delegate as #crate_path::sqlx::Type<DB>>::compatible(ty)
             }
         }
 
-        impl<'q, DB> ::sqlx::Encode<'q, DB> for #ident
+        impl<'q, DB> #crate_path::sqlx::Encode<'q, DB> for #ident
         where
-            DB: ::sqlx::Database,
-            #delegate: ::sqlx::Encode<'q, DB>,
+            DB: #crate_path::sqlx::Database,
+            #delegate: #crate_path::sqlx::Encode<'q, DB>,
         {
             fn encode_by_ref(
                 &self,
-                buf: &mut <DB as ::sqlx::Database>::ArgumentBuffer<'q>,
-            ) -> Result<::sqlx::encode::IsNull, ::sqlx::error::BoxDynError> {
+                buf: &mut <DB as #crate_path::sqlx::Database>::ArgumentBuffer<'q>,
+            ) -> Result<#crate_path::sqlx::encode::IsNull, #crate_path::sqlx::error::BoxDynError> {
                 #encode
             }
         }
 
-        impl<'r, DB> ::sqlx::Decode<'r, DB> for #ident
+        impl<'r, DB> #crate_path::sqlx::Decode<'r, DB> for #ident
         where
-            DB: ::sqlx::Database,
-            #delegate: ::sqlx::Decode<'r, DB>,
+            DB: #crate_path::sqlx::Database,
+            #delegate: #crate_path::sqlx::Decode<'r, DB>,
         {
             fn decode(
-                value: <DB as ::sqlx::Database>::ValueRef<'r>,
-            ) -> Result<Self, ::sqlx::error::BoxDynError> {
+                value: <DB as #crate_path::sqlx::Database>::ValueRef<'r>,
+            ) -> Result<Self, #crate_path::sqlx::error::BoxDynError> {
                 #decode
             }
         }
     }
 }
 
-fn generic_encode(parsed: &ParsedSqlEnum) -> TokenStream {
+fn generic_encode(parsed: &ParsedSqlEnum, crate_path: &TokenStream) -> TokenStream {
     if parsed.storage == Storage::Int {
         let ty = repr_ty(parsed.repr);
         return quote! {
             let value: #ty = self.as_sql_code();
-            <#ty as ::sqlx::Encode<'q, DB>>::encode_by_ref(&value, buf)
+            <#ty as #crate_path::sqlx::Encode<'q, DB>>::encode_by_ref(&value, buf)
         };
     }
     quote! {
         let value = self.as_sql_str().to_string();
-        <String as ::sqlx::Encode<'q, DB>>::encode_by_ref(&value, buf)
+        <String as #crate_path::sqlx::Encode<'q, DB>>::encode_by_ref(&value, buf)
     }
 }
 
-fn generic_decode(parsed: &ParsedSqlEnum) -> TokenStream {
+fn generic_decode(parsed: &ParsedSqlEnum, crate_path: &TokenStream) -> TokenStream {
     if parsed.storage == Storage::Int {
         let ty = repr_ty(parsed.repr);
         return quote! {
-            let value = <#ty as ::sqlx::Decode<'r, DB>>::decode(value)?;
+            let value = <#ty as #crate_path::sqlx::Decode<'r, DB>>::decode(value)?;
             Self::try_from_sql_code(value)
-                .map_err(|err| -> ::sqlx::error::BoxDynError { Box::new(err) })
+                .map_err(|err| -> #crate_path::sqlx::error::BoxDynError { Box::new(err) })
         };
     }
     quote! {
-        let value = <String as ::sqlx::Decode<'r, DB>>::decode(value)?;
+        let value = <String as #crate_path::sqlx::Decode<'r, DB>>::decode(value)?;
         Self::try_from_sql_str(&value)
-            .map_err(|err| -> ::sqlx::error::BoxDynError { Box::new(err) })
+            .map_err(|err| -> #crate_path::sqlx::error::BoxDynError { Box::new(err) })
     }
 }
 
@@ -225,9 +244,9 @@ fn column_type_impl(parsed: &ParsedSqlEnum, crate_path: &TokenStream) -> TokenSt
     let ident = &parsed.ident;
     let static_sql_type = static_column_type_expr(parsed, crate_path);
     quote! {
-        impl #crate_path::ColumnType for #ident {
-            fn column_desc(dialect: &#crate_path::Dialect) -> #crate_path::ColumnDesc {
-                #crate_path::ColumnDesc {
+        impl #crate_path::schema::ColumnType for #ident {
+            fn column_desc(dialect: &#crate_path::gaman::core::Dialect) -> #crate_path::schema::ColumnDesc {
+                #crate_path::schema::ColumnDesc {
                     sql_type: #static_sql_type,
                     nullable: false,
                 }
@@ -243,14 +262,14 @@ fn static_column_type_expr(parsed: &ParsedSqlEnum, crate_path: &TokenStream) -> 
             let pg = int_sql_type_postgres(parsed.repr);
             quote! {
                 match dialect {
-                    #crate_path::Dialect::Postgres => #pg,
+                    #crate_path::gaman::core::Dialect::Postgres => #pg,
                     _ => "integer",
                 }
             }
         }
         Storage::NativePostgres => quote! {
             match dialect {
-                #crate_path::Dialect::Postgres => Self::SQL_NAME,
+                #crate_path::gaman::core::Dialect::Postgres => Self::SQL_NAME,
                 _ => "text",
             }
         },
@@ -268,14 +287,14 @@ fn sql_column_type_expr(parsed: &ParsedSqlEnum, crate_path: &TokenStream) -> Tok
             let pg = int_sql_type_postgres(parsed.repr);
             quote! {
                 match dialect {
-                    #crate_path::Dialect::Postgres => #pg.to_string(),
+                    #crate_path::gaman::core::Dialect::Postgres => #pg.to_string(),
                     _ => "integer".to_string(),
                 }
             }
         }
         Storage::NativePostgres => quote! {
             match dialect {
-                #crate_path::Dialect::Postgres => Self::SQL_NAME.to_string(),
+                #crate_path::gaman::core::Dialect::Postgres => Self::SQL_NAME.to_string(),
                 _ => "text".to_string(),
             }
         },
@@ -295,7 +314,7 @@ fn check_expr(parsed: &ParsedSqlEnum, crate_path: &TokenStream) -> TokenStream {
         }
         Storage::NativePostgres => quote! {
             match dialect {
-                #crate_path::Dialect::Postgres => None,
+                #crate_path::gaman::core::Dialect::Postgres => None,
                 _ => Some(#crate_path::enums::__private::text_check_expr(column, Self::SQL_VALUES)),
             }
         },

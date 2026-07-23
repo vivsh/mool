@@ -18,6 +18,31 @@ compile_error!(
     "database backend features are mutually exclusive: disable either `mysql` or `sqlite`"
 );
 
+#[cfg(all(feature = "mariadb", feature = "postgres"))]
+compile_error!(
+    "database backend features are mutually exclusive: disable either `mariadb` or `postgres`"
+);
+
+#[cfg(all(feature = "mariadb", feature = "mysql"))]
+compile_error!(
+    "database backend features are mutually exclusive: disable either `mariadb` or `mysql`"
+);
+
+#[cfg(all(feature = "mariadb", feature = "sqlite"))]
+compile_error!(
+    "database backend features are mutually exclusive: disable either `mariadb` or `sqlite`"
+);
+
+#[cfg(not(any(
+    feature = "postgres",
+    feature = "mysql",
+    feature = "mariadb",
+    feature = "sqlite"
+)))]
+compile_error!(
+    "enable exactly one database backend feature: `postgres`, `sqlite`, `mysql`, or `mariadb`"
+);
+
 // PostgreSQL types (default)
 #[cfg(feature = "postgres")]
 pub type Database = sqlx::Postgres;
@@ -31,40 +56,25 @@ pub type QueryResult = sqlx::postgres::PgQueryResult;
 pub type Pool = sqlx::PgPool;
 
 // MySQL types
-#[cfg(all(feature = "mysql", not(feature = "postgres")))]
+#[cfg(any(feature = "mysql", feature = "mariadb"))]
 pub type Database = sqlx::MySql;
-#[cfg(all(feature = "mysql", not(feature = "postgres")))]
+#[cfg(any(feature = "mysql", feature = "mariadb"))]
 pub type Arguments<'q> = sqlx::mysql::MySqlArguments;
-#[cfg(all(feature = "mysql", not(feature = "postgres")))]
+#[cfg(any(feature = "mysql", feature = "mariadb"))]
 pub type Row = sqlx::mysql::MySqlRow;
-#[cfg(all(feature = "mysql", not(feature = "postgres")))]
+#[cfg(any(feature = "mysql", feature = "mariadb"))]
 pub type Pool = sqlx::MySqlPool;
-#[cfg(all(feature = "mysql", not(feature = "postgres")))]
+#[cfg(any(feature = "mysql", feature = "mariadb"))]
 pub type QueryResult = sqlx::mysql::MySqlQueryResult;
 
 // SQLite types
-#[cfg(all(feature = "sqlite", not(any(feature = "postgres", feature = "mysql"))))]
+#[cfg(feature = "sqlite")]
 pub type Database = sqlx::Sqlite;
-#[cfg(all(feature = "sqlite", not(any(feature = "postgres", feature = "mysql"))))]
+#[cfg(feature = "sqlite")]
 pub type Arguments<'q> = sqlx::sqlite::SqliteArguments<'q>;
-#[cfg(all(feature = "sqlite", not(any(feature = "postgres", feature = "mysql"))))]
+#[cfg(feature = "sqlite")]
 pub type Row = sqlx::sqlite::SqliteRow;
-#[cfg(all(feature = "sqlite", not(any(feature = "postgres", feature = "mysql"))))]
+#[cfg(feature = "sqlite")]
 pub type Pool = sqlx::SqlitePool;
-#[cfg(all(feature = "sqlite", not(any(feature = "postgres", feature = "mysql"))))]
-pub type QueryResult = sqlx::sqlite::SqliteQueryResult;
-
-// No-op / dummy types: fall back to SQLite types (always present in the
-// workspace's sqlx dependency) so the crate compiles without a real DB feature.
-// At runtime DbPool connects to an in-memory SQLite database that lives for the
-// lifetime of the process. Useful for development and testing without a server.
-#[cfg(not(any(feature = "postgres", feature = "mysql", feature = "sqlite")))]
-pub type Database = sqlx::Sqlite;
-#[cfg(not(any(feature = "postgres", feature = "mysql", feature = "sqlite")))]
-pub type Arguments<'q> = sqlx::sqlite::SqliteArguments<'q>;
-#[cfg(not(any(feature = "postgres", feature = "mysql", feature = "sqlite")))]
-pub type Row = sqlx::sqlite::SqliteRow;
-#[cfg(not(any(feature = "postgres", feature = "mysql", feature = "sqlite")))]
-pub type Pool = sqlx::SqlitePool;
-#[cfg(not(any(feature = "postgres", feature = "mysql", feature = "sqlite")))]
+#[cfg(feature = "sqlite")]
 pub type QueryResult = sqlx::sqlite::SqliteQueryResult;

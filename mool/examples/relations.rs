@@ -27,9 +27,7 @@ pub struct PostWithAuthor {
 
 fn main() -> Result<(), db::QueryError> {
     let posts = Post::table();
-    let plan = db::from(&posts)
-        .all::<PostWithAuthor>()
-        .plan(db::queries::Dialect::Postgres)?;
+    let plan = db::from(&posts).all::<PostWithAuthor>().plan()?;
 
     assert!(plan.sql.contains("JOIN users author"));
     Ok(())

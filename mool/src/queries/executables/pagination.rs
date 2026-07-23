@@ -3,7 +3,7 @@
 use crate::Page;
 use crate::commons::Arguments;
 use crate::commons::Row;
-use crate::executor::{DBSession, DbError};
+use crate::executor::{DbError, DbSession};
 use crate::interfaces::Record;
 use crate::placeholders::Dialect;
 
@@ -22,7 +22,7 @@ impl QueryScope {
     ) -> Result<Page<T>, DbError>
     where
         T: Record + for<'r> sqlx::FromRow<'r, Row> + Send + Unpin + 'static,
-        S: DBSession,
+        S: DbSession,
     {
         let page = page.max(1);
         let per_page = per_page.max(1);

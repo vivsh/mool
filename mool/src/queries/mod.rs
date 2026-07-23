@@ -9,6 +9,7 @@
 //! sources, expressions, dialect rendering, binding, and validation.
 
 mod api;
+mod batch;
 mod executables;
 mod expr;
 mod extension;
@@ -34,7 +35,9 @@ mod validate;
 pub(super) const GENERATED_PREFIX: &str = "__typed_";
 
 pub use api::{backref, from, many_to_many, meta, out, val, var};
-pub use expr::{Expr, IntoExpr};
+pub(crate) use batch::InsertConflict;
+pub use batch::{BatchPlan, BatchStatementPlan, ColumnSet};
+pub use expr::{ColumnRef, Expr, IntoExpr};
 pub(crate) use expr::{many_to_many_exists, relation_aggregate, relation_exists};
 pub use extension::{DbExpression, DbFunction, ExprRenderCtx, FunctionArgs, IntoFunctionArgs};
 pub use plan::{ParamSource, ParamSpec, QueryPlan};
@@ -44,12 +47,15 @@ pub use source::{SourceKind, SourceMeta};
 pub mod funcs {
     pub use super::extension::{custom, func};
     pub use super::functions::aggregate::{avg, count, count_all, max, min, sum};
+    #[cfg(feature = "postgres")]
     pub use super::functions::arrays as array;
+    pub use super::functions::cast::{CastTarget, cast};
     pub use super::functions::common::{
         case, coalesce, cume_dist, dense_rank, first_value, lag, lag_by, lag_or, last_value, lead,
         lead_by, lead_or, now, nth_value, ntile, percent_rank, rank, row_number,
     };
     pub use super::functions::json;
+    #[cfg(feature = "postgres")]
     pub use super::functions::postgres;
     pub use super::window::{
         current_row, following, preceding, range_between, rows_between, unbounded_following,
@@ -61,9 +67,16 @@ pub mod funcs {
 pub use api::__private;
 #[doc(hidden)]
 pub use executables::{
-    All, BatchInsert, BatchUpsert, Count, Delete, Exists, First, Insert, One, OwnedBatchInsert,
-    OwnedBatchUpsert, OwnedInsert, OwnedUpdate, ReturningBatchInsert, ReturningBatchUpsert,
-    ReturningDelete, ReturningInsert, ReturningUpdate, Scalar, Slice, Update,
+    All, BatchInsert, BatchUpdate, BatchUpsert, Count, Delete, Exists, First, Insert, One,
+    OwnedBatchInsert, OwnedBatchUpdate, OwnedBatchUpsert, OwnedInsert, OwnedUpdate,
+    ReturningBatchInsert, ReturningBatchUpdate, ReturningBatchUpsert, ReturningDelete,
+    ReturningInsert, ReturningUpdate, Scalar, Slice, Update,
+};
+#[cfg(feature = "postgres")]
+#[doc(hidden)]
+pub use executables::{
+    OwnedPgUnnestBatchInsert, OwnedPgUnnestBatchUpsert, PgUnnestBatchInsert, PgUnnestBatchUpsert,
+    ReturningPgUnnestBatchInsert, ReturningPgUnnestBatchUpsert,
 };
 #[doc(hidden)]
 pub use expr::{OrderExpr, Predicate};
@@ -83,5 +96,3 @@ pub use traits::Projectable;
 pub use values::{NoRecord, WriteInput, WriteValues};
 #[doc(hidden)]
 pub use window::{FrameBound, WindowFrame, WindowSpec};
-
-pub use crate::placeholders::Dialect;

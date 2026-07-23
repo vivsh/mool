@@ -133,7 +133,7 @@ impl Renderer {
             Dialect::Postgres => {
                 self.push_postgres_param(name, rust_type, source, value, var_id, display_name)
             }
-            Dialect::Mysql | Dialect::Sqlite => {
+            Dialect::Mysql | Dialect::Mariadb | Dialect::Sqlite => {
                 self.push_positional_param(name, rust_type, source, value, var_id, display_name)
             }
         }

@@ -68,6 +68,28 @@ impl Renderer {
         Ok(())
     }
 
+    pub(super) fn render_upsert_selected(
+        &self,
+        columns: &[String],
+        conflict: &[ColumnRef],
+        selected: Option<&[ColumnRef]>,
+        sql: &mut String,
+    ) -> Result<(), QueryError> {
+        let defaults = upsert_update_columns(columns, conflict)?;
+        let update_columns = match selected {
+            Some(selected) => selected.iter().map(|column| column.name.as_ref()).collect(),
+            None => defaults,
+        };
+        self.dialect_renderer
+            .validate_feature(DialectFeature::Upsert)?;
+        sql.push_str(
+            &self
+                .dialect_renderer
+                .render_upsert(conflict, &update_columns)?,
+        );
+        Ok(())
+    }
+
     fn render_value_row(&self, row: usize, cols: usize, sql: &mut String) {
         for col in 0..cols {
             if col > 0 {

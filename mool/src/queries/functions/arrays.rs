@@ -4,7 +4,6 @@ use std::marker::PhantomData;
 
 use crate::ArgValue;
 use crate::QueryError;
-use crate::placeholders::Dialect;
 use crate::types::Array;
 
 use super::super::expr::{Expr, ExprNode, IntoExpr, Predicate, ValueNode};
@@ -14,8 +13,8 @@ use super::super::extension::{DbExpression, ExprRenderCtx, FunctionArgs, custom}
 pub fn value<T>(value: Vec<T>) -> Expr<Array<T>>
 where
     Vec<T>: Clone
-        + for<'q> sqlx::Encode<'q, crate::Database>
-        + sqlx::Type<crate::Database>
+        + for<'q> sqlx::Encode<'q, crate::backend::Database>
+        + sqlx::Type<crate::backend::Database>
         + Send
         + Sync
         + 'static,
@@ -179,10 +178,6 @@ where
         self.args.clone()
     }
 
-    fn validate(&self, dialect: Dialect) -> Result<(), QueryError> {
-        validate_postgres(dialect, self.feature())
-    }
-
     fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError> {
         Ok(format!(
             "({} {} {})",
@@ -199,14 +194,6 @@ impl<T> ArrayBinaryExpr<T> {
             ArrayBinaryOp::Contains => "@>",
             ArrayBinaryOp::ContainedBy => "<@",
             ArrayBinaryOp::Overlaps => "&&",
-        }
-    }
-
-    fn feature(&self) -> &'static str {
-        match self.op {
-            ArrayBinaryOp::Contains => "array containment",
-            ArrayBinaryOp::ContainedBy => "array contained-by",
-            ArrayBinaryOp::Overlaps => "array overlap",
         }
     }
 }
@@ -252,10 +239,6 @@ where
         self.args.clone()
     }
 
-    fn validate(&self, dialect: Dialect) -> Result<(), QueryError> {
-        validate_postgres(dialect, "array empty check")
-    }
-
     fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError> {
         Ok(format!("cardinality({}) = 0", ctx.arg(0)?))
     }
@@ -269,10 +252,6 @@ where
         self.args.clone()
     }
 
-    fn validate(&self, dialect: Dialect) -> Result<(), QueryError> {
-        validate_postgres(dialect, self.feature())
-    }
-
     fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError> {
         let array = ctx.arg(0)?;
         match self.op {
@@ -281,16 +260,6 @@ where
             ArrayUnaryOp::IsEmpty => Err(QueryError::BindError(
                 "array empty check is a predicate".to_string(),
             )),
-        }
-    }
-}
-
-impl<T> ArrayUnaryExpr<T> {
-    fn feature(&self) -> &'static str {
-        match self.op {
-            ArrayUnaryOp::IsEmpty => "array empty check",
-            ArrayUnaryOp::Length => "array length",
-            ArrayUnaryOp::Cardinality => "array cardinality",
         }
     }
 }
@@ -336,10 +305,6 @@ where
         self.args.clone()
     }
 
-    fn validate(&self, dialect: Dialect) -> Result<(), QueryError> {
-        validate_postgres(dialect, "array position")
-    }
-
     fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError> {
         Ok(format!("array_position({}, {})", ctx.arg(0)?, ctx.arg(1)?))
     }
@@ -353,10 +318,6 @@ where
         self.args.clone()
     }
 
-    fn validate(&self, dialect: Dialect) -> Result<(), QueryError> {
-        validate_postgres(dialect, self.feature())
-    }
-
     fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError> {
         match self.op {
             ArrayValueOp::Any => Ok(format!("({} = ANY({}))", ctx.arg(1)?, ctx.arg(0)?)),
@@ -365,33 +326,5 @@ where
                 "array position is a scalar expression".to_string(),
             )),
         }
-    }
-}
-
-impl<T> ArrayValueExpr<T> {
-    fn feature(&self) -> &'static str {
-        match self.op {
-            ArrayValueOp::Position => "array position",
-            ArrayValueOp::Any => "array ANY predicate",
-            ArrayValueOp::All => "array ALL predicate",
-        }
-    }
-}
-
-fn validate_postgres(dialect: Dialect, feature: &str) -> Result<(), QueryError> {
-    if dialect == Dialect::Postgres {
-        return Ok(());
-    }
-    Err(QueryError::BindError(format!(
-        "{feature} is not supported for {}",
-        dialect_name(dialect)
-    )))
-}
-
-fn dialect_name(dialect: Dialect) -> &'static str {
-    match dialect {
-        Dialect::Postgres => "postgres",
-        Dialect::Sqlite => "sqlite",
-        Dialect::Mysql => "mysql",
     }
 }

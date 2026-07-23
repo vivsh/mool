@@ -2,9 +2,10 @@
 
 use mool as db;
 
-static MIGRATIONS: db::EmbeddedMigrations = db::embedded_migrations!("tests/fixtures/migrations");
-static EMPTY_MIGRATIONS: db::EmbeddedMigrations =
-    db::embedded_migrations!("tests/fixtures/empty_migrations");
+static MIGRATIONS: db::migrations::EmbeddedMigrations =
+    db::migrations::embedded_migrations!("tests/fixtures/migrations");
+static EMPTY_MIGRATIONS: db::migrations::EmbeddedMigrations =
+    db::migrations::embedded_migrations!("tests/fixtures/empty_migrations");
 
 /// Verifies Mool's public macro embeds YAML migrations in sorted id order.
 #[test]

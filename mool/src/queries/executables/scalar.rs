@@ -1,7 +1,7 @@
 //! Scalar and aggregate executable implementations.
 
 use crate::commons::Arguments;
-use crate::executor::{DBSession, DbError};
+use crate::executor::{DbError, DbSession};
 use crate::placeholders::Dialect;
 
 use super::super::binds::statement_from_plan;
@@ -11,40 +11,40 @@ use crate::QueryError;
 
 impl Count {
     /// Renders SQL and parameter metadata without executing the query.
-    pub fn plan(&self, dialect: Dialect) -> Result<QueryPlan, QueryError> {
-        self.scope.plan_count(dialect)
+    pub fn plan(&self) -> Result<QueryPlan, QueryError> {
+        self.scope.plan_count(Dialect::active())
     }
 
     /// Executes this count query.
     pub async fn exec<S>(self, session: &mut S) -> Result<i64, DbError>
     where
-        S: DBSession,
+        S: DbSession,
     {
-        let stmt = statement_from_plan(self.plan(Dialect::active())?, Arguments::default())?;
+        let stmt = statement_from_plan(self.plan()?, Arguments::default())?;
         session.fetch_scalar(stmt).await
     }
 }
 
 impl Exists {
     /// Renders SQL and parameter metadata without executing the query.
-    pub fn plan(&self, dialect: Dialect) -> Result<QueryPlan, QueryError> {
-        self.scope.plan_exists(dialect)
+    pub fn plan(&self) -> Result<QueryPlan, QueryError> {
+        self.scope.plan_exists(Dialect::active())
     }
 
     /// Executes this exists query.
     pub async fn exec<S>(self, session: &mut S) -> Result<bool, DbError>
     where
-        S: DBSession,
+        S: DbSession,
     {
-        let stmt = statement_from_plan(self.plan(Dialect::active())?, Arguments::default())?;
+        let stmt = statement_from_plan(self.plan()?, Arguments::default())?;
         session.fetch_scalar(stmt).await
     }
 }
 
 impl<V> Scalar<V> {
     /// Renders SQL and parameter metadata without executing the query.
-    pub fn plan(&self, dialect: Dialect) -> Result<QueryPlan, QueryError> {
-        self.scope.plan_scalar(self.expr.clone(), dialect)
+    pub fn plan(&self) -> Result<QueryPlan, QueryError> {
+        self.scope.plan_scalar(self.expr.clone(), Dialect::active())
     }
 
     /// Executes this scalar query.
@@ -55,9 +55,9 @@ impl<V> Scalar<V> {
             + Send
             + Unpin
             + 'static,
-        S: DBSession,
+        S: DbSession,
     {
-        let stmt = statement_from_plan(self.plan(Dialect::active())?, Arguments::default())?;
+        let stmt = statement_from_plan(self.plan()?, Arguments::default())?;
         session.fetch_scalar(stmt).await
     }
 }

@@ -269,14 +269,7 @@ fn resolve_mysql_with_duplicate_placeholders() {
     assert_eq!(args.len(), 2); // Always binds for each placeholder in MySQL
 }
 
-// KNOWN LIMITATION: Tests for non-ASCII SQL
-// The current implementation uses byte-based iteration and may not correctly handle
-// multi-byte UTF-8 characters. While it doesn't panic in simple cases (because slicing
-// happens at boundaries the algorithm naturally lands on), this is not guaranteed and
-// depends on where multi-byte characters appear relative to SQL syntax elements.
-//
-// These tests document the limitation. TODO: Fix by using char-aware iteration or
-// ensuring all byte offsets are on valid UTF-8 boundaries.
+// Regression coverage for UTF-8 around placeholders, quotes, and comments.
 
 /// Verifies placeholder parsing and resolution for `iter with multibyte utf8 in sql`.
 #[test]

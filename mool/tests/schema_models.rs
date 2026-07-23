@@ -1,7 +1,20 @@
 mod common;
 
-use common::{Account, AuditLog, Membership, Post, PostWithAuthor, User, col};
+use common::{Account, AuditLog, Membership, PostWithAuthor, col};
+#[cfg(any(feature = "postgres", feature = "sqlite"))]
+use common::{Post, User};
 use mool as db;
+
+fn active_dialect() -> db::gaman::core::Dialect {
+    #[cfg(feature = "postgres")]
+    return db::gaman::core::Dialect::Postgres;
+    #[cfg(feature = "sqlite")]
+    return db::gaman::core::Dialect::Sqlite;
+    #[cfg(feature = "mysql")]
+    return db::gaman::core::Dialect::Mysql;
+    #[cfg(feature = "mariadb")]
+    return db::gaman::core::Dialect::Mariadb;
+}
 
 #[derive(Debug, Clone, db::Model)]
 #[table(name = "catalog_items")]
@@ -28,8 +41,9 @@ struct InvalidReference {
 /// Verifies generated table metadata used by schema and query generation.
 #[test]
 fn model_derive_generates_table_metadata() {
-    let table = <Account as db::IntoTable>::into_table(&db::Dialect::Postgres);
-    let audit_table = <AuditLog as db::IntoTable>::into_table(&db::Dialect::Postgres);
+    let dialect = active_dialect();
+    let table = <Account as db::schema::IntoTable>::into_table(&dialect);
+    let audit_table = <AuditLog as db::schema::IntoTable>::into_table(&dialect);
 
     assert_eq!(table.name, "accounts");
     assert_eq!(table.schema.as_deref(), Some("auth"));
@@ -43,7 +57,7 @@ fn model_derive_generates_table_metadata() {
 /// Verifies composite primary key metadata keeps the explicit name and column order.
 #[test]
 fn model_derive_preserves_composite_primary_key_metadata() {
-    let table = <Membership as db::IntoTable>::into_table(&db::Dialect::Postgres);
+    let table = <Membership as db::schema::IntoTable>::into_table(&active_dialect());
     let primary_key = table.primary_key.as_ref().expect("primary key");
 
     assert_eq!(primary_key.name, "memberships_identity");
@@ -83,9 +97,10 @@ fn record_derive_exposes_flattened_reference_metadata() {
 }
 
 /// Verifies model schema building includes multiple model tables and inferred column types.
+#[cfg(any(feature = "postgres", feature = "sqlite"))]
 #[test]
 fn schema_builder_collects_model_tables() {
-    let schema = db::schema(db::Dialect::Postgres)
+    let schema = db::schema()
         .model::<User>()
         .model::<Post>()
         .build()
@@ -95,11 +110,17 @@ fn schema_builder_collects_model_tables() {
     let posts = common::table(&schema, "posts");
 
     assert_eq!(col(users, "email").col_type, "text");
+    #[cfg(feature = "postgres")]
     assert_eq!(col(posts, "author_id").col_type, "bigint");
+    #[cfg(feature = "sqlite")]
+    assert_eq!(col(posts, "author_id").col_type, "integer");
+    #[cfg(feature = "postgres")]
     assert_eq!(
         col(posts, "created_at").col_type,
         "timestamp with time zone"
     );
+    #[cfg(feature = "sqlite")]
+    assert_eq!(col(posts, "created_at").col_type, "timestamptz");
     assert!(col(posts, "subtitle").nullable);
     assert_eq!(posts.foreign_keys.len(), 1);
     assert_eq!(posts.foreign_keys[0].name, "posts_author_id_fkey");
@@ -111,7 +132,7 @@ fn schema_builder_collects_model_tables() {
 /// Verifies enum-aware schema building exposes dialect validation failures.
 #[test]
 fn schema_builder_returns_validation_errors() {
-    let error = db::schema(db::Dialect::Postgres)
+    let error = db::schema()
         .model::<InvalidReference>()
         .build()
         .expect_err("invalid foreign key must fail schema validation");
@@ -126,7 +147,7 @@ fn schema_builder_returns_validation_errors() {
 /// Verifies field-level index, unique, and check metadata are preserved.
 #[test]
 fn model_derive_preserves_indexes_uniques_and_checks() {
-    let table = <CatalogItem as db::IntoTable>::into_table(&db::Dialect::Postgres);
+    let table = <CatalogItem as db::schema::IntoTable>::into_table(&active_dialect());
 
     assert_eq!(table.indexes.len(), 1);
     assert_eq!(table.indexes[0].name, "catalog_items_slug_idx");
@@ -134,7 +155,7 @@ fn model_derive_preserves_indexes_uniques_and_checks() {
     assert!(!table.indexes[0].unique);
     assert!(table.constraints.iter().any(|constraint| matches!(
         constraint,
-        db::Constraint::Unique { name, columns }
+        db::schema::Constraint::Unique { name, columns }
             if name == "catalog_items_sku_key" && columns == &vec!["sku".to_string()]
     )));
     assert_eq!(

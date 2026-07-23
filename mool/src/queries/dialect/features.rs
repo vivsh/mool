@@ -9,6 +9,7 @@ pub(in crate::queries) enum DialectFeature {
     WindowFunctions,
 }
 
+#[cfg(any(feature = "sqlite", feature = "mysql", feature = "mariadb"))]
 impl DialectFeature {
     pub(super) fn name(self) -> &'static str {
         match self {

@@ -2,8 +2,6 @@
 
 use std::borrow::Cow;
 
-use crate::placeholders::Dialect;
-
 use super::super::expr::{Expr, IntoExpr};
 use super::super::extension::{DbFunction, func};
 use crate::QueryError;
@@ -17,25 +15,7 @@ pub fn unaccent(expr: impl IntoExpr<String>) -> Expr<String> {
 struct Unaccent;
 
 impl DbFunction<String> for Unaccent {
-    fn name(&self, _dialect: Dialect) -> Result<Cow<'static, str>, QueryError> {
+    fn name(&self) -> Result<Cow<'static, str>, QueryError> {
         Ok(Cow::Borrowed("unaccent"))
-    }
-
-    fn validate(&self, dialect: Dialect, _arity: usize) -> Result<(), QueryError> {
-        if dialect == Dialect::Postgres {
-            return Ok(());
-        }
-        Err(QueryError::BindError(format!(
-            "unaccent is not supported for {}",
-            dialect_name(dialect)
-        )))
-    }
-}
-
-fn dialect_name(dialect: Dialect) -> &'static str {
-    match dialect {
-        Dialect::Postgres => "postgres",
-        Dialect::Sqlite => "sqlite",
-        Dialect::Mysql => "mysql",
     }
 }

@@ -2,9 +2,11 @@ mod common;
 
 use common::{Post, PostSummary};
 use mool as db;
-use mool::DBSession;
+use mool::DbSession;
 use mool::Model;
-use mool::mock::{DbCallKind, DummyPool, MockDBSession, PlannedCall, PlannedResponse};
+use mool::mock::{
+    DbCallKind, DummyPool, MockDbSession, PlannedCall, PlannedResponse, StatementMatcher,
+};
 
 fn post(id: i64, title: &str) -> Post {
     Post {
@@ -20,18 +22,18 @@ fn post(id: i64, title: &str) -> Post {
 /// Verifies planned execute/scalar/all/one/optional calls return values and record statements.
 #[tokio::test]
 async fn mock_session_executes_planned_calls_and_records_sql() {
-    let mut session = MockDBSession::new();
-    session.plan_execute_ok("INSERT INTO posts", 1);
-    session.plan_fetch_scalar_ok("COUNT", 2_i64);
+    let mut session = MockDbSession::new();
+    session.plan_execute_ok("INSERT INTO posts (title) VALUES (?)", 1);
+    session.plan_fetch_scalar_ok("SELECT COUNT(*) FROM posts", 2_i64);
     session.plan(PlannedCall {
         kind: DbCallKind::FetchAll,
-        sql_contains: Some("FROM posts"),
+        matcher: StatementMatcher::Contains("FROM posts".to_string()),
         response: PlannedResponse::OkAnyVec(Box::new(vec![post(1, "a"), post(2, "b")])),
     });
-    session.plan_fetch_one_ok("LIMIT 2", post(1, "a"));
+    session.plan_fetch_one_ok("SELECT * FROM posts LIMIT 2 OFFSET 0", post(1, "a"));
     session.plan(PlannedCall {
         kind: DbCallKind::FetchOptional,
-        sql_contains: Some("LIMIT 1"),
+        matcher: StatementMatcher::Exact("SELECT * FROM posts LIMIT 1 OFFSET 0".to_string()),
         response: PlannedResponse::OkAnyOpt(Box::new(Some(post(1, "a")))),
     });
 
@@ -89,13 +91,13 @@ async fn mock_session_executes_planned_calls_and_records_sql() {
 /// Verifies query terminals work through the mock session without a database.
 #[tokio::test]
 async fn mock_session_supports_typed_query_terminals() {
-    let mut session = MockDBSession::new();
+    let mut session = MockDbSession::new();
     session.plan(PlannedCall {
         kind: DbCallKind::FetchAll,
-        sql_contains: Some("FROM posts"),
+        matcher: StatementMatcher::Contains("FROM posts".to_string()),
         response: PlannedResponse::OkAnyVec(Box::new(vec![post(1, "a")])),
     });
-    session.plan_fetch_scalar_ok("COUNT", 1_i64);
+    session.plan_fetch_scalar_ok("SELECT COUNT(*) FROM posts post", 1_i64);
 
     let posts = Post::table();
     let rows = db::from(&posts)
@@ -109,25 +111,25 @@ async fn mock_session_supports_typed_query_terminals() {
     assert_eq!(total, 1);
 }
 
-/// Verifies mock type mismatches are returned as unsupported errors.
+/// Verifies mock type mismatches are returned as structured mock errors.
 #[tokio::test]
 async fn mock_session_reports_type_mismatch_errors() {
-    let mut session = MockDBSession::new();
-    session.plan_fetch_scalar_ok("COUNT", 1_i64);
+    let mut session = MockDbSession::new();
+    session.plan_fetch_scalar_ok("SELECT COUNT(*) FROM posts", 1_i64);
 
     let err = session
         .fetch_scalar::<String>(db::Statement::from_str("SELECT COUNT(*) FROM posts"))
         .await
         .unwrap_err();
 
-    assert_eq!(err.code(), "unsupported_feature");
-    assert!(err.to_string().contains("fetch_scalar type mismatch"));
+    assert_eq!(err.code(), "mock_error");
+    assert!(err.to_string().contains("planned response type mismatch"));
 }
 
 /// Verifies relaxed mocks return errors instead of panicking on unexpected calls.
 #[tokio::test]
 async fn relaxed_mock_session_returns_unexpected_call_error() {
-    let mut session = MockDBSession::new();
+    let mut session = MockDbSession::new();
     session.strict = false;
 
     let err = session
@@ -135,7 +137,7 @@ async fn relaxed_mock_session_returns_unexpected_call_error() {
         .await
         .unwrap_err();
 
-    assert_eq!(err.code(), "unsupported_feature");
+    assert_eq!(err.code(), "mock_error");
     assert!(err.to_string().contains("unexpected call"));
 }
 
@@ -143,7 +145,7 @@ async fn relaxed_mock_session_returns_unexpected_call_error() {
 #[tokio::test]
 #[should_panic(expected = "expected call Execute, got FetchScalar")]
 async fn strict_mock_session_panics_on_call_order_mismatch() {
-    let mut session = MockDBSession::new();
+    let mut session = MockDbSession::new();
     session.plan_execute_ok("INSERT", 1);
 
     let _ = session
@@ -157,7 +159,7 @@ async fn dummy_pool_delegates_to_mock_session() {
     let mut pool = DummyPool::new();
     pool.plan(PlannedCall {
         kind: DbCallKind::FetchAll,
-        sql_contains: Some("FROM posts"),
+        matcher: StatementMatcher::Contains("FROM posts".to_string()),
         response: PlannedResponse::OkAnyVec(Box::new(vec![PostSummary {
             id: 1,
             title: "a".to_string(),

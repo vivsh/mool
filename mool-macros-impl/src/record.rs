@@ -45,6 +45,7 @@ pub(crate) fn derive_record_impl(
     let bind_names = gen_record_bind_column_names(&parsed.fields, &crate_path);
     let bind_stmts = gen_bind_statements(&parsed.fields, &crate_path);
     let bind_selected_arms = gen_bind_selected_arms(&parsed.fields, &crate_path);
+    let (batch_column_type, batch_column_values) = gen_batch_columns(&parsed.fields, &crate_path);
     let typed_handles = gen_typed_handles(&parsed, &crate_path);
 
     quote! {
@@ -75,8 +76,8 @@ pub(crate) fn derive_record_impl(
 
             fn record_bind_values(
                 &self,
-                args: &mut #crate_path::Arguments<'static>,
-            ) -> Result<(), ::sqlx::Error> {
+                args: &mut #crate_path::backend::Arguments<'static>,
+            ) -> Result<(), #crate_path::sqlx::Error> {
                 #(#bind_stmts)*
                 Ok(())
             }
@@ -84,13 +85,13 @@ pub(crate) fn derive_record_impl(
             fn record_bind_selected(
                 &self,
                 columns: &[&str],
-                args: &mut #crate_path::Arguments<'static>,
-            ) -> Result<(), ::sqlx::Error> {
+                args: &mut #crate_path::backend::Arguments<'static>,
+            ) -> Result<(), #crate_path::sqlx::Error> {
                 for column in columns {
                     match *column {
                         #(#bind_selected_arms)*
                         other => {
-                            return Err(::sqlx::Error::ColumnNotFound(other.to_string()));
+                            return Err(#crate_path::sqlx::Error::ColumnNotFound(other.to_string()));
                         }
                     }
                 }
@@ -98,28 +99,38 @@ pub(crate) fn derive_record_impl(
             }
 
             fn record_scan_ordered(
-                row: &#crate_path::Row,
+                row: &#crate_path::backend::Row,
                 start_idx: &mut usize,
-            ) -> Result<Self, ::sqlx::Error> {
-                use ::sqlx::Row as _;
-                use ::sqlx::ValueRef as _;
+            ) -> Result<Self, #crate_path::sqlx::Error> {
+                use #crate_path::sqlx::Row as _;
+                use #crate_path::sqlx::ValueRef as _;
                 Ok(Self {
                     #(#field_inits)*
                 })
             }
 
             fn record_scan_unordered(
-                row: &#crate_path::Row,
-            ) -> Result<Self, ::sqlx::Error> {
-                use ::sqlx::Row as _;
+                row: &#crate_path::backend::Row,
+            ) -> Result<Self, #crate_path::sqlx::Error> {
+                use #crate_path::sqlx::Row as _;
                 Ok(Self {
                     #(#field_inits_unordered)*
                 })
             }
         }
 
-        impl #impl_generics ::sqlx::FromRow<'_, #crate_path::Row> for #ident #ty_generics #where_clause {
-            fn from_row(row: &#crate_path::Row) -> Result<Self, ::sqlx::Error> {
+        impl #impl_generics #crate_path::BatchRecord for #ident #ty_generics #where_clause {
+            type BatchColumns = #batch_column_type;
+
+            fn batch_columns(
+                rows: &[Self],
+            ) -> Result<Self::BatchColumns, #crate_path::sqlx::Error> {
+                Ok(#batch_column_values)
+            }
+        }
+
+        impl #impl_generics #crate_path::sqlx::FromRow<'_, #crate_path::backend::Row> for #ident #ty_generics #where_clause {
+            fn from_row(row: &#crate_path::backend::Row) -> Result<Self, #crate_path::sqlx::Error> {
                 <Self as #crate_path::Record>::record_scan(row)
             }
         }
@@ -148,7 +159,15 @@ fn gen_where_clause(
         let ty = &field.ty;
         let ty_str = quote::quote!(#ty).to_string();
 
-        if (is_flatten(field) || is_reference(field)) && is_selectable(field) {
+        if is_flatten(field) && is_selectable(field) {
+            let bound_ty = option_inner_type(ty).unwrap_or(ty);
+            let bound_ty_str = quote::quote!(#bound_ty).to_string();
+            if seen.insert(bound_ty_str) {
+                wc.predicates.push(syn::parse_quote! {
+                    #bound_ty: #crate_path::BatchRecord
+                });
+            }
+        } else if is_reference(field) && is_selectable(field) {
             let bound_ty = option_inner_type(ty).unwrap_or(ty);
             let bound_ty_str = quote::quote!(#bound_ty).to_string();
             if seen.insert(bound_ty_str) {
@@ -181,12 +200,56 @@ fn gen_where_clause(
         } else {
             wc.predicates.push(syn::parse_quote! {
                 #ty: ::core::clone::Clone
-                    + for<'q> ::sqlx::Encode<'q, #crate_path::Database>
-                    + ::sqlx::Type<#crate_path::Database>
+                    + for<'q> #crate_path::sqlx::Encode<'q, #crate_path::backend::Database>
+                    + #crate_path::sqlx::Type<#crate_path::backend::Database>
                     + ::core::marker::Send
             });
         }
     }
+}
+
+fn gen_batch_columns(
+    fields: &[FieldMeta],
+    crate_path: &proc_macro2::TokenStream,
+) -> (proc_macro2::TokenStream, proc_macro2::TokenStream) {
+    let mut types = Vec::new();
+    let mut values = Vec::new();
+    for field in fields.iter().filter(|field| is_bindable(field)) {
+        let Some(ident) = field.ident.as_ref() else {
+            continue;
+        };
+        let ty = &field.ty;
+        if is_flatten(field) {
+            types.push(quote! { <#ty as #crate_path::BatchRecord>::BatchColumns });
+            values.push(quote! {
+                {
+                    let nested = rows
+                        .iter()
+                        .map(|row| row.#ident.clone())
+                        .collect::<::std::vec::Vec<_>>();
+                    <#ty as #crate_path::BatchRecord>::batch_columns(&nested)?
+                }
+            });
+        } else if is_json(field) {
+            types.push(quote! { ::std::vec::Vec<::serde_json::Value> });
+            values.push(quote! {
+                rows.iter()
+                    .map(|row| {
+                        ::serde_json::to_value(&row.#ident)
+                            .map_err(|error| #crate_path::sqlx::Error::Decode(Box::new(error)))
+                    })
+                    .collect::<Result<::std::vec::Vec<_>, _>>()?
+            });
+        } else {
+            types.push(quote! { ::std::vec::Vec<#ty> });
+            values.push(quote! {
+                rows.iter()
+                    .map(|row| row.#ident.clone())
+                    .collect::<::std::vec::Vec<_>>()
+            });
+        }
+    }
+    (quote! { (#(#types,)*) }, quote! { (#(#values,)*) })
 }
 
 /// Generate field initializers for struct construction.
@@ -378,7 +441,7 @@ fn gen_field_initializers_unordered(
             gen_default_init(ident)
         } else if is_reference(field) {
             // Reference fields cannot be scanned unordered - they need prefixed column names
-            gen_reference_unordered_error(ident, &field.ty)
+            gen_reference_unordered_error(ident, &field.ty, crate_path)
         } else if is_flatten(field) {
             gen_flatten_init_unordered(ident, &field.ty, crate_path)
         } else if is_json(field) {
@@ -401,7 +464,11 @@ fn gen_default_init(ident: &syn::Ident) -> proc_macro2::TokenStream {
 }
 
 /// Generate compile error for reference field in unordered scan.
-fn gen_reference_unordered_error(ident: &syn::Ident, ty: &Type) -> proc_macro2::TokenStream {
+fn gen_reference_unordered_error(
+    ident: &syn::Ident,
+    ty: &Type,
+    crate_path: &proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
     let error_msg = format!(
         "Cannot use record_scan_unordered with reference field '{}' of type '{}'. \
         Reference fields require ordered scanning (record_scan_ordered) because they use \
@@ -411,8 +478,8 @@ fn gen_reference_unordered_error(ident: &syn::Ident, ty: &Type) -> proc_macro2::
     );
     quote! {
         #ident: {
-            let unsupported: Result<#ty, ::sqlx::Error> =
-                Err(::sqlx::Error::ColumnNotFound(#error_msg.to_string()));
+            let unsupported: Result<#ty, #crate_path::sqlx::Error> =
+                Err(#crate_path::sqlx::Error::ColumnNotFound(#error_msg.to_string()));
             unsupported?
         },
     }
@@ -460,14 +527,14 @@ fn gen_optional_reference_init(
 /// Generate initialization for JSON-deserialized field.
 fn gen_json_init(
     ident: &syn::Ident,
-    _crate_path: &proc_macro2::TokenStream,
+    crate_path: &proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
     quote! {
         #ident: {
             let json_val: ::serde_json::Value = row.try_get(*start_idx)?;
             *start_idx += 1;
             ::serde_json::from_value(json_val)
-                .map_err(|e| ::sqlx::Error::Decode(Box::new(e)))?
+                .map_err(|e| #crate_path::sqlx::Error::Decode(Box::new(e)))?
         },
     }
 }
@@ -737,16 +804,16 @@ fn gen_bind_statements(
                 return Some(quote! {
                     {
                         let value = ::serde_json::to_value(&self.#ident)
-                            .map_err(|err| ::sqlx::Error::Decode(Box::new(err)))?;
-                        ::sqlx::Arguments::add(args, value)
-                            .map_err(::sqlx::Error::Decode)?;
+                            .map_err(|err| #crate_path::sqlx::Error::Decode(Box::new(err)))?;
+                        #crate_path::sqlx::Arguments::add(args, value)
+                            .map_err(#crate_path::sqlx::Error::Decode)?;
                     }
                 });
             }
             Some(quote! {
                 {
-                    ::sqlx::Arguments::add(args, self.#ident.clone())
-                        .map_err(::sqlx::Error::Decode)?;
+                    #crate_path::sqlx::Arguments::add(args, self.#ident.clone())
+                        .map_err(#crate_path::sqlx::Error::Decode)?;
                 }
             })
         })
@@ -786,16 +853,16 @@ fn gen_bind_selected_arms(
                 return Some(quote! {
                     #col_name => {
                         let value = ::serde_json::to_value(&self.#ident)
-                            .map_err(|err| ::sqlx::Error::Decode(Box::new(err)))?;
-                        ::sqlx::Arguments::add(args, value)
-                            .map_err(::sqlx::Error::Decode)?;
+                            .map_err(|err| #crate_path::sqlx::Error::Decode(Box::new(err)))?;
+                        #crate_path::sqlx::Arguments::add(args, value)
+                            .map_err(#crate_path::sqlx::Error::Decode)?;
                     }
                 });
             }
             Some(quote! {
                 #col_name => {
-                    ::sqlx::Arguments::add(args, self.#ident.clone())
-                        .map_err(::sqlx::Error::Decode)?;
+                    #crate_path::sqlx::Arguments::add(args, self.#ident.clone())
+                        .map_err(#crate_path::sqlx::Error::Decode)?;
                 }
             })
         })
@@ -817,7 +884,7 @@ fn gen_flatten_init_unordered(
 fn gen_json_init_unordered(
     ident: &syn::Ident,
     field: &FieldMeta,
-    _crate_path: &proc_macro2::TokenStream,
+    crate_path: &proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
     let col_name = field
         .column
@@ -830,7 +897,7 @@ fn gen_json_init_unordered(
         #ident: {
             let json_val: ::serde_json::Value = row.try_get(#col_name)?;
             ::serde_json::from_value(json_val)
-                .map_err(|e| ::sqlx::Error::Decode(Box::new(e)))?
+                .map_err(|e| #crate_path::sqlx::Error::Decode(Box::new(e)))?
         },
     }
 }

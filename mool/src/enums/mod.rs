@@ -1,6 +1,7 @@
 //! SQL enum mapping support.
 
 mod error;
+mod postgres_array;
 mod schema;
 mod storage;
 mod traits;

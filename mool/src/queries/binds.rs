@@ -76,7 +76,16 @@ pub(super) fn collect_expr_binds(
             collect_expr_binds(left, values)?;
             collect_expr_binds(right, values)
         }
-        ExprNode::Unary { expr, .. } => collect_expr_binds(expr, values),
+        ExprNode::Unary { expr, .. } | ExprNode::NullCheck { expr, .. } => {
+            collect_expr_binds(expr, values)
+        }
+        ExprNode::Between {
+            expr, lower, upper, ..
+        } => {
+            collect_expr_binds(expr, values)?;
+            collect_expr_binds(lower, values)?;
+            collect_expr_binds(upper, values)
+        }
         ExprNode::Function { args, .. } | ExprNode::Custom { args, .. } => {
             for arg in args {
                 collect_expr_binds(arg, values)?;
@@ -91,7 +100,9 @@ pub(super) fn collect_expr_binds(
             collect_expr_binds(left, values)?;
             collect_source_binds(&source.source, values)
         }
-        ExprNode::InList { left, values: list } => {
+        ExprNode::InList {
+            left, values: list, ..
+        } => {
             collect_expr_binds(left, values)?;
             for value in list {
                 collect_expr_binds(value, values)?;
@@ -142,7 +153,16 @@ pub(super) fn collect_expr_ctes(node: &ExprNode, used: &mut HashSet<String>) {
             collect_expr_ctes(left, used);
             collect_expr_ctes(right, used);
         }
-        ExprNode::Unary { expr, .. } => collect_expr_ctes(expr, used),
+        ExprNode::Unary { expr, .. } | ExprNode::NullCheck { expr, .. } => {
+            collect_expr_ctes(expr, used)
+        }
+        ExprNode::Between {
+            expr, lower, upper, ..
+        } => {
+            collect_expr_ctes(expr, used);
+            collect_expr_ctes(lower, used);
+            collect_expr_ctes(upper, used);
+        }
         ExprNode::Function { args, .. } | ExprNode::Custom { args, .. } => {
             for arg in args {
                 collect_expr_ctes(arg, used);
@@ -156,7 +176,7 @@ pub(super) fn collect_expr_ctes(node: &ExprNode, used: &mut HashSet<String>) {
             collect_expr_ctes(left, used);
             collect_source_ctes(&source.source, used);
         }
-        ExprNode::InList { left, values } => {
+        ExprNode::InList { left, values, .. } => {
             collect_expr_ctes(left, used);
             for value in values {
                 collect_expr_ctes(value, used);
@@ -355,6 +375,31 @@ where
     let mut args = Arguments::default();
     for row in rows {
         bind_row(row, col_count, &mut args)?;
+    }
+    Ok(args)
+}
+
+pub(super) fn bind_selected_rows<T>(
+    rows: &[T],
+    columns: &[&str],
+) -> Result<Arguments<'static>, QueryError>
+where
+    T: Record,
+{
+    use sqlx::Arguments as _;
+
+    let mut args = Arguments::default();
+    for row in rows {
+        let before = args.len();
+        row.record_bind_selected(columns, &mut args)
+            .map_err(|error| QueryError::BindError(error.to_string()))?;
+        let added = args.len().saturating_sub(before);
+        if added != columns.len() {
+            return Err(QueryError::BindCountMismatch {
+                expected: columns.len(),
+                got: added,
+            });
+        }
     }
     Ok(args)
 }

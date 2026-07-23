@@ -1,0 +1,16 @@
+error[E0277]: the trait bound `Expr<std::string::String>: IntoExpr<i64>` is not satisfied
+  --> tests/compile/fail/write_type_mismatch.rs:12:52
+   |
+12 |         .update_using(|write| write.set(&posts.id, db::val("wrong".to_string())));
+   |                                     ---            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `IntoExpr<i64>` is not implemented for `Expr<std::string::String>`
+   |                                     |
+   |                                     required by a bound introduced by this call
+   |
+   = help: the trait `IntoExpr<i64>` is not implemented for `Expr<std::string::String>`
+           but trait `IntoExpr<std::string::String>` is implemented for it
+   = help: for that trait implementation, expected `std::string::String`, found `i64`
+note: required by a bound in `queries::values::WriteUsing::set`
+  --> src/queries/values.rs
+   |
+   |     pub fn set<T>(&self, column: &Column<T>, expr: impl IntoExpr<T>) -> Self {
+   |                                                         ^^^^^^^^^^^ required by this bound in `WriteUsing::set`

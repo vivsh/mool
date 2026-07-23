@@ -10,10 +10,18 @@ mod read;
 mod returning;
 mod scalar;
 mod types;
+#[cfg(feature = "postgres")]
+mod unnest;
 mod write;
 
 pub use types::{
-    All, BatchInsert, BatchUpsert, Count, Delete, Exists, First, Insert, One, OwnedBatchInsert,
-    OwnedBatchUpsert, OwnedInsert, OwnedUpdate, ReturningBatchInsert, ReturningBatchUpsert,
-    ReturningDelete, ReturningInsert, ReturningUpdate, Scalar, Slice, Update,
+    All, BatchInsert, BatchUpdate, BatchUpsert, Count, Delete, Exists, First, Insert, One,
+    OwnedBatchInsert, OwnedBatchUpdate, OwnedBatchUpsert, OwnedInsert, OwnedUpdate,
+    ReturningBatchInsert, ReturningBatchUpdate, ReturningBatchUpsert, ReturningDelete,
+    ReturningInsert, ReturningUpdate, Scalar, Slice, Update,
+};
+#[cfg(feature = "postgres")]
+pub use types::{
+    OwnedPgUnnestBatchInsert, OwnedPgUnnestBatchUpsert, PgUnnestBatchInsert, PgUnnestBatchUpsert,
+    ReturningPgUnnestBatchInsert, ReturningPgUnnestBatchUpsert,
 };

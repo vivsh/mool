@@ -2,9 +2,9 @@
 
 use mool as db;
 
-static MIGRATIONS: db::EmbeddedMigrations =
-    db::embedded_migrations!("tests/fixtures/migrations");
+static MIGRATIONS: db::migrations::EmbeddedMigrations =
+    db::migrations::embedded_migrations!("tests/fixtures/migrations");
 
 fn main() {
-    let _source = db::root_migration(&MIGRATIONS);
+    let _source = db::migrations::root_migration(&MIGRATIONS);
 }

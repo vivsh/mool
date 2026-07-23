@@ -1,6 +1,8 @@
 //! Schema helpers for SQL enum mappings.
 
-use crate::{Dialect, FunctionDef, IntoTable, Model, Schema, SchemaBuilder};
+use crate::Model;
+use crate::schema::{FunctionDef, IntoTable, Schema, SchemaBuilder, SchemaLoadError};
+use gaman::core::Dialect;
 
 use super::{SqlEnum, SqlEnumStorage};
 
@@ -27,9 +29,9 @@ pub trait SqlEnumSchema {
     const SQL_ENUMS: &'static [SqlEnumRegistration];
 }
 
-/// Creates an enum-aware schema builder.
-pub fn schema(dialect: Dialect) -> SqlSchemaBuilder {
-    SqlSchemaBuilder::new(dialect)
+/// Creates an enum-aware schema builder for the selected backend.
+pub fn schema() -> SqlSchemaBuilder {
+    SqlSchemaBuilder::new()
 }
 
 /// Enum-aware wrapper around Gaman schema building.
@@ -38,9 +40,16 @@ pub struct SqlSchemaBuilder {
     inner: SchemaBuilder,
 }
 
+impl Default for SqlSchemaBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SqlSchemaBuilder {
-    /// Creates a schema builder for one migration dialect.
-    pub fn new(dialect: Dialect) -> Self {
+    /// Creates a schema builder for the selected backend.
+    pub fn new() -> Self {
+        let dialect = crate::backend::gaman_dialect();
         Self {
             dialect,
             inner: SchemaBuilder::new(dialect),
@@ -103,7 +112,7 @@ impl SqlSchemaBuilder {
     ///
     /// Returns a schema-loading error when the assembled metadata is invalid
     /// for that dialect.
-    pub fn build(self) -> Result<Schema, crate::SchemaLoadError> {
+    pub fn build(self) -> Result<Schema, SchemaLoadError> {
         self.inner.build()
     }
 }

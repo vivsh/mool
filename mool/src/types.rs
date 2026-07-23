@@ -1,5 +1,6 @@
 //! Database expression marker types.
 
+#[cfg(feature = "postgres")]
 use std::marker::PhantomData;
 
 /// Marker for SQL JSON/JSONB expressions in typed queries.
@@ -15,5 +16,6 @@ pub struct Json;
 /// This is not a Rust value wrapper. Model fields keep using `Vec<T>` or
 /// `Option<Vec<T>>`, while generated query columns use this marker for SQL
 /// array expressions.
+#[cfg(feature = "postgres")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Array<T>(PhantomData<fn() -> T>);

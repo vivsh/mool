@@ -94,11 +94,11 @@ fn main() {
         .filter_with(&filter)
         .filter(db::backref::<PostComments>(&posts).exists())
         .all::<PostSummary>()
-        .plan(db::queries::Dialect::Postgres)
+        .plan()
         .unwrap();
 
     let _ = db::from(&posts)
         .all::<PostWithAuthor>()
-        .plan(db::queries::Dialect::Postgres)
+        .plan()
         .unwrap();
 }

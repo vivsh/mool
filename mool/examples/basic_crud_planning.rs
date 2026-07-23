@@ -27,14 +27,12 @@ fn main() -> Result<(), db::QueryError> {
     let select = db::from(&posts)
         .filter(posts.published.eq(db::val(true)))
         .all::<Post>()
-        .plan(db::queries::Dialect::Postgres)?;
-    let insert = db::from(&posts)
-        .insert(&patch)
-        .plan(db::queries::Dialect::Postgres)?;
+        .plan()?;
+    let insert = db::from(&posts).insert(&patch).plan()?;
     let update = db::from(&posts)
         .filter(posts.id.eq(db::val(1_i64)))
         .update(&patch)
-        .plan(db::queries::Dialect::Postgres)?;
+        .plan()?;
 
     assert!(select.sql.starts_with("SELECT"));
     assert!(insert.sql.starts_with("INSERT INTO posts"));

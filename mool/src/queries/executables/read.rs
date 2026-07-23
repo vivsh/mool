@@ -1,7 +1,7 @@
 //! Read-row executable implementations.
 
 use crate::commons::{Arguments, Row};
-use crate::executor::{DBSession, DbError};
+use crate::executor::{DbError, DbSession};
 use crate::interfaces::Record;
 use crate::placeholders::Dialect;
 
@@ -42,8 +42,8 @@ where
     }
 
     /// Renders SQL and parameter metadata without executing the query.
-    pub fn plan(&self, dialect: Dialect) -> Result<QueryPlan, QueryError> {
-        self.scope.plan_all::<T>(dialect)
+    pub fn plan(&self) -> Result<QueryPlan, QueryError> {
+        self.scope.plan_all::<T>(Dialect::active())
     }
 
     /// Combines this query with another query using `UNION`.
@@ -99,9 +99,9 @@ where
     pub async fn exec<S>(self, session: &mut S) -> Result<Vec<T>, DbError>
     where
         T: for<'r> sqlx::FromRow<'r, Row> + Send + Unpin + 'static,
-        S: DBSession,
+        S: DbSession,
     {
-        let stmt = statement_from_plan(self.plan(Dialect::active())?, Arguments::default())?;
+        let stmt = statement_from_plan(self.plan()?, Arguments::default())?;
         session.fetch_all(stmt).await
     }
 }
@@ -133,17 +133,17 @@ where
     }
 
     /// Renders SQL and parameter metadata without executing the query.
-    pub fn plan(&self, dialect: Dialect) -> Result<QueryPlan, QueryError> {
-        self.scope.plan_one::<T>(dialect)
+    pub fn plan(&self) -> Result<QueryPlan, QueryError> {
+        self.scope.plan_one::<T>(Dialect::active())
     }
 
     /// Executes this query and requires exactly one row.
     pub async fn exec<S>(self, session: &mut S) -> Result<T, DbError>
     where
         T: for<'r> sqlx::FromRow<'r, Row> + Send + Unpin + 'static,
-        S: DBSession,
+        S: DbSession,
     {
-        let stmt = statement_from_plan(self.plan(Dialect::active())?, Arguments::default())?;
+        let stmt = statement_from_plan(self.plan()?, Arguments::default())?;
         let rows = session.fetch_all(stmt).await?;
         exactly_one(rows)
     }
@@ -187,17 +187,17 @@ where
     }
 
     /// Renders SQL and parameter metadata without executing the query.
-    pub fn plan(&self, dialect: Dialect) -> Result<QueryPlan, QueryError> {
-        self.scope.plan_first::<T>(dialect)
+    pub fn plan(&self) -> Result<QueryPlan, QueryError> {
+        self.scope.plan_first::<T>(Dialect::active())
     }
 
     /// Executes this query and returns the first row, if any.
     pub async fn exec<S>(self, session: &mut S) -> Result<Option<T>, DbError>
     where
         T: for<'r> sqlx::FromRow<'r, Row> + Send + Unpin + 'static,
-        S: DBSession,
+        S: DbSession,
     {
-        let stmt = statement_from_plan(self.plan(Dialect::active())?, Arguments::default())?;
+        let stmt = statement_from_plan(self.plan()?, Arguments::default())?;
         session.fetch_optional(stmt).await
     }
 }
@@ -229,8 +229,9 @@ where
     }
 
     /// Renders SQL and parameter metadata without executing the query.
-    pub fn plan(&self, dialect: Dialect) -> Result<QueryPlan, QueryError> {
-        self.scope.plan_slice::<T>(self.offset, self.count, dialect)
+    pub fn plan(&self) -> Result<QueryPlan, QueryError> {
+        self.scope
+            .plan_slice::<T>(self.offset, self.count, Dialect::active())
     }
 
     /// Converts this limited select executable into a CTE source.
@@ -259,9 +260,9 @@ where
     pub async fn exec<S>(self, session: &mut S) -> Result<Vec<T>, DbError>
     where
         T: for<'r> sqlx::FromRow<'r, Row> + Send + Unpin + 'static,
-        S: DBSession,
+        S: DbSession,
     {
-        let stmt = statement_from_plan(self.plan(Dialect::active())?, Arguments::default())?;
+        let stmt = statement_from_plan(self.plan()?, Arguments::default())?;
         session.fetch_all(stmt).await
     }
 }

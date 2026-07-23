@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use super::{QueryError, Statement};
 use crate::argvalue::ArgValue;
 use crate::commons::{Arguments, Row};
-use crate::executor::{DBSession, DbError};
+use crate::executor::{DbError, DbSession};
 use crate::placeholders::{
     Dialect, PlaceholderIter, PlaceholderPart, has_named_placeholder, resolve_placeholders,
 };
@@ -43,8 +43,9 @@ impl RawQuery {
         self
     }
 
-    /// Renders this raw query into a statement for the requested placeholder dialect.
-    pub fn to_statement(mut self, dialect: Dialect) -> Result<Statement, QueryError> {
+    /// Renders this raw query into a statement for the selected backend.
+    pub fn to_statement(mut self) -> Result<Statement, QueryError> {
+        let dialect = Dialect::active();
         if let Some(err) = self.error {
             return Err(err);
         }
@@ -68,15 +69,15 @@ impl RawQuery {
     }
 
     fn into_statement(self) -> Result<Statement, QueryError> {
-        self.to_statement(Dialect::active())
+        self.to_statement()
     }
 
-    pub async fn execute(self, session: &mut impl DBSession) -> Result<u64, DbError> {
+    pub async fn execute(self, session: &mut impl DbSession) -> Result<u64, DbError> {
         let stmt = self.into_statement()?;
         session.execute(stmt).await
     }
 
-    pub async fn one<M>(self, session: &mut impl DBSession) -> Result<M, DbError>
+    pub async fn one<M>(self, session: &mut impl DbSession) -> Result<M, DbError>
     where
         M: for<'r> sqlx::FromRow<'r, Row> + Send + Unpin + 'static,
     {
@@ -84,7 +85,7 @@ impl RawQuery {
         session.fetch_one(stmt).await
     }
 
-    pub async fn all<M>(self, session: &mut impl DBSession) -> Result<Vec<M>, DbError>
+    pub async fn all<M>(self, session: &mut impl DbSession) -> Result<Vec<M>, DbError>
     where
         M: for<'r> sqlx::FromRow<'r, Row> + Send + Unpin + 'static,
     {
@@ -92,7 +93,7 @@ impl RawQuery {
         session.fetch_all(stmt).await
     }
 
-    pub async fn first<M>(self, session: &mut impl DBSession) -> Result<Option<M>, DbError>
+    pub async fn first<M>(self, session: &mut impl DbSession) -> Result<Option<M>, DbError>
     where
         M: for<'r> sqlx::FromRow<'r, Row> + Send + Unpin + 'static,
     {
@@ -100,7 +101,7 @@ impl RawQuery {
         session.fetch_optional(stmt).await
     }
 
-    pub async fn scalar<T>(self, session: &mut impl DBSession) -> Result<T, DbError>
+    pub async fn scalar<T>(self, session: &mut impl DbSession) -> Result<T, DbError>
     where
         for<'r> (T,): sqlx::FromRow<'r, Row>,
         T: Send + Unpin + 'static,

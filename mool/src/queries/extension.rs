@@ -12,17 +12,17 @@ use super::handles::{Column, Var};
 use super::source::ProjectedColumn;
 use crate::QueryError;
 
-/// Dialect-aware typed SQL function.
+/// Typed SQL function for the selected backend.
 ///
 /// Implement this for reusable functions such as `unaccent`, JSON helpers, or
 /// project-specific database functions. The renderer validates the function
 /// for the active dialect before writing SQL.
 pub trait DbFunction<T>: Clone + Send + Sync + 'static {
-    /// Returns the SQL function name for `dialect`.
-    fn name(&self, dialect: Dialect) -> Result<Cow<'static, str>, QueryError>;
+    /// Returns the SQL function name.
+    fn name(&self) -> Result<Cow<'static, str>, QueryError>;
 
-    /// Validates dialect support and argument count.
-    fn validate(&self, _dialect: Dialect, _arity: usize) -> Result<(), QueryError> {
+    /// Validates the argument count and backend-specific constraints.
+    fn validate(&self, _arity: usize) -> Result<(), QueryError> {
         Ok(())
     }
 
@@ -42,8 +42,8 @@ pub trait DbExpression<T>: Clone + Send + Sync + 'static {
         FunctionArgs::default()
     }
 
-    /// Validates dialect support before rendering.
-    fn validate(&self, _dialect: Dialect) -> Result<(), QueryError> {
+    /// Validates backend-specific constraints before rendering.
+    fn validate(&self) -> Result<(), QueryError> {
         Ok(())
     }
 
@@ -62,8 +62,7 @@ impl<'a> ExprRenderCtx<'a> {
         Self { dialect, args }
     }
 
-    /// Returns the SQL dialect currently being rendered.
-    pub fn dialect(&self) -> Dialect {
+    pub(crate) fn dialect(&self) -> Dialect {
         self.dialect
     }
 
@@ -165,12 +164,13 @@ where
     F: DbFunction<T>,
 {
     fn name(&self, dialect: Dialect) -> Result<Cow<'static, str>, QueryError> {
-        let name = self.function.name(dialect)?;
+        let name = self.function.name()?;
         dialect::render_function(dialect, name)
     }
 
     fn validate(&self, dialect: Dialect, arity: usize) -> Result<(), QueryError> {
-        self.function.validate(dialect, arity)
+        let _ = dialect;
+        self.function.validate(arity)
     }
 
     fn supports_window(&self) -> bool {
@@ -184,7 +184,8 @@ where
     E: DbExpression<T>,
 {
     fn validate(&self, dialect: Dialect) -> Result<(), QueryError> {
-        self.expression.validate(dialect)
+        let _ = dialect;
+        self.expression.validate()
     }
 
     fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError> {

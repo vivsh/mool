@@ -212,9 +212,9 @@ fn unsupported(dialect: Dialect, feature: &str) -> QueryError {
 }
 
 /// PostgreSQL-specific JSON helpers.
+#[cfg(feature = "postgres")]
 pub mod postgres {
     use crate::QueryError;
-    use crate::placeholders::Dialect;
     use crate::queries::extension::{DbExpression, ExprRenderCtx, FunctionArgs, custom};
     use crate::queries::{IntoExpr, Predicate};
     use crate::types::Json;
@@ -237,26 +237,8 @@ pub mod postgres {
             self.args.clone()
         }
 
-        fn validate(&self, dialect: Dialect) -> Result<(), QueryError> {
-            if dialect == Dialect::Postgres {
-                return Ok(());
-            }
-            Err(QueryError::BindError(format!(
-                "jsonb containment is not supported for {}",
-                dialect_name(dialect)
-            )))
-        }
-
         fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError> {
             Ok(format!("({} @> {})", ctx.arg(0)?, ctx.arg(1)?))
-        }
-    }
-
-    fn dialect_name(dialect: Dialect) -> &'static str {
-        match dialect {
-            Dialect::Postgres => "postgres",
-            Dialect::Sqlite => "sqlite",
-            Dialect::Mysql => "mysql",
         }
     }
 }

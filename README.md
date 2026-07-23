@@ -6,75 +6,244 @@
 
 Mool, pronounced `mool`, means root or source.
 
-Mool is a source-first typed SQL data mapper for Rust.
+Mool is a typed SQL data mapper for Rust and SQLx. It turns Rust models and
+schema SQL into deterministic, reviewable migrations while keeping application
+queries explicit, typed, and dialect-correct.
 
-It gives SQLx projects typed model metadata, row mapping, query handles,
-relations, filters, schema metadata, migrations, test mocks, and enum mapping
-without turning records into active-record objects. SQL remains visible at the
-call site; Mool just makes the shape typed.
+## Built for Typed SQL and Automatic Migrations
 
-## Why Mool?
+Mool brings three application-facing guarantees to SQLx projects:
 
-Use Mool when plain SQLx starts repeating the same database plumbing:
+| Strength | What it means in practice |
+| --- | --- |
+| Typed SQL API | Table handles, columns, values, projections, filters, and relations are generated from Rust types instead of repeated strings. |
+| Compile-time dialect safety | Select one backend feature and only its valid query extensions exist. PostgreSQL-only SQL cannot accidentally enter a SQLite or MySQL build. |
+| Migration generation | Rust `Model` schema metadata and authored schema SQL define desired state; changed state is diffed into deterministic migration files for review and execution. |
 
-- derive table metadata once, then reuse typed columns everywhere
-- compose selects, writes, filters, joins, subqueries, and CTEs with checked
-  column/value types
-- scan rows into models, projections, joined records, and write payloads
-- keep SQL rendering explicit enough to inspect, test, and reason about
-- share one session abstraction across pools, transactions, raw SQL, and mocks
-- keep schema/migration metadata next to Rust models when that is useful
+The result is a practical middle ground: direct SQL control, SQLx compatibility,
+and a migration workflow that stays close to the application's Rust types.
 
-Mool is best described as a typed SQL data mapper. It is ORM-like, but not an
-active-record ORM: records do not save themselves, no runtime identity map owns
-your data, and queries are still written as explicit operations.
+## Why Mool
 
-## Why Not Plain SQL?
+Plain SQL remains excellent for one-off statements and carefully tuned queries.
+Mool is for the rest: application queries that repeatedly need reliable column
+names, bind ordering, row mapping, filters, relations, migrations, and
+testable SQL plans.
 
-Plain SQL is still the right tool for one-off queries, highly tuned hand-written
-SQL, or database-specific statements that should stay exact.
-
-Mool earns its keep when the same tables appear across many query paths. It
-removes stringly-typed column names, repeated bind ordering, manual row scanning,
-ad hoc filter builders, and test-only database setup while keeping escape hatches:
+It is ORM-like where that saves work, but it is not an active-record ORM.
+Models do not own a connection or save themselves. You write the operation,
+Mool provides the typed metadata, builder, and SQLx execution path.
 
 ```rust
-db::query("SELECT COUNT(*) FROM posts WHERE author_id = :author_id")
-    .bind("author_id", 42_i64)
-    .scalar::<i64>(session)
+use mool as db;
+use mool::prelude::*;
+
+#[derive(Debug, Clone, db::Model)]
+#[table(name = "posts")]
+struct Post {
+    #[column(primary_key)]
+    id: i64,
+    author_id: i64,
+    title: String,
+    published: bool,
+}
+
+let posts = Post::table();
+let rows = db::from(&posts)
+    .filter(posts.published.eq(db::val(true)))
+    .order_by(posts.id.desc())
+    .all::<Post>()
+    .exec(&mut pool)
     .await?;
 ```
 
 ## Install
 
-Enable exactly one backend feature for real use:
+Enable exactly one database backend:
 
 ```toml
-mool = { version = "0.1", features = ["postgres"] }
-# or
-mool = { version = "0.1", features = ["sqlite"] }
-# or
-mool = { version = "0.1", features = ["mysql"] }
+mool = { version = "0.2", features = ["postgres"] }
+# or: "sqlite", "mysql", "mariadb"
 ```
 
-Optional features:
+Common optional features:
 
 ```toml
-mool = { version = "0.1", features = ["postgres", "migrations"] }
-mool = { version = "0.1", features = ["sqlite", "migrations"] }
-mool = { version = "0.1", features = ["sqlite", "mock"] }
+mool = { version = "0.2", features = ["postgres", "migrations"] }
+mool = { version = "0.2", features = ["sqlite", "mock"] }
 ```
 
-Backend features are mutually exclusive. Do not verify with `--all-features`.
-Migrations are supported for Postgres and SQLite3, not MySQL. Mock support is
-available in Mool debug/test builds and behind `mock` for downstream release
-builds.
+Automatic migrations are supported for PostgreSQL and SQLite. MySQL and MariaDB
+are available as query backends; their migration workflow is still maturing.
+Do not use `--all-features`: backend features are exclusive.
 
-## Quick Example
+`mool::prelude::*` is the normal application import. It includes the common
+query and model API plus only the extensions supported by the chosen backend.
+
+## Core Workflow
+
+### Models, records, and writes
+
+Use `Model` for a table-backed row. Use `Record` for projections, patches,
+joined output, and write payloads.
 
 ```rust
-use mool as db;
+#[derive(Debug, Clone, db::Record)]
+#[table(name = "posts")]
+struct PostPatch {
+    title: String,
+    published: bool,
+}
 
+let posts = Post::table();
+let id = db::var::<i64>().named("id");
+
+db::from(&posts)
+    .filter(posts.id.eq(&id))
+    .bind(&id, 42_i64)
+    .update(&PostPatch {
+        title: "A clearer title".to_string(),
+        published: true,
+    })
+    .exec(&mut pool)
+    .await?;
+```
+
+The same builder handles `insert`, `batch_insert`, `update`, `delete`,
+`upsert`, `returning`, `count`, `exists`, `scalar`, and paginated reads.
+Plans can be inspected without a database:
+
+```rust
+let plan = db::from(&Post::table()).all::<Post>().plan()?;
+println!("{}", plan.sql);
+```
+
+### Batch inserts, upserts, and updates
+
+Batch writes accept ordinary `Record` or `Model` slices. Mool derives the
+largest statement size allowed by the selected backend; `batch_size()` can
+lower that limit, while `single_statement()` rejects input that cannot fit.
+
+```rust
+db::from(&posts)
+    .batch_insert(&new_posts)
+    .batch_size(1_000)
+    .exec(&mut pool)
+    .await?;
+
+db::from(&posts)
+    .batch_upsert(&new_posts, (&posts.author_id, &posts.title))
+    .update_only(&posts.published)
+    .exec(&mut pool)
+    .await?;
+
+db::from(&posts)
+    .batch_update(&changed_posts, (&posts.title, &posts.published))
+    .exec(&mut pool)
+    .await?;
+```
+
+PostgreSQL and SQLite provide exact `ignore_conflicts()` and
+`ignore_conflicts_on(...)` extensions. MySQL and MariaDB provide the broader
+`ignore_errors()`, which renders `INSERT IGNORE`. Returning composes with batch
+writes on backends that support it; ignored rows are not returned and return
+order is unspecified. Affected-row counts follow backend semantics and may not
+equal the input length, especially for MySQL-family upserts.
+
+Use `.plans()` to inspect every generated statement and its input row range.
+Each planned batch is one session call. Multiple batches are not implicitly
+transactional, so wrap execution in an explicit transaction when all rows must
+commit or roll back together.
+
+PostgreSQL can transpose derived records into typed arrays and bind one
+parameter per writable column:
+
+```rust
+use mool::backend::PostgresUnnestExt;
+
+let inserted = db::from(&posts)
+    .returning::<Post>()
+    .batch_insert(&new_posts)
+    .using_unnest()
+    .exec(&mut pool)
+    .await?;
+```
+
+`using_unnest()` is explicit, works with inserts and upserts, and supports
+normal models, purpose-built records, nullable values, UUIDs, temporal values,
+JSON, and `SqlEnum` fields when their PostgreSQL array representation exists.
+
+### Filters and relations
+
+`Filterable` turns request-shaped structs into typed predicates. Empty optional
+values are omitted, so one filter type can serve many search forms.
+
+```rust
+#[derive(Debug, Clone, db::Filterable)]
+#[filter(model = Post)]
+struct PostFilter {
+    #[filter(op = "eq")]
+    published: Option<bool>,
+    #[filter(op = "in", column = "id")]
+    ids: Vec<i64>,
+}
+
+let rows = db::from(&Post::table())
+    .filter_with(&filter)
+    .all::<Post>()
+    .exec(&mut pool)
+    .await?;
+```
+
+Models can declare references, and records can flatten joined rows. Mool also
+supports back-reference and many-to-many predicates, relation aggregates, and
+two-query prefetch when that is more efficient than a join.
+
+### Subqueries, CTEs, and SQL functions
+
+Derived sources remain typed. Build a query, turn it into a `subquery()` or
+`cte()`, and use its output handles in the parent query. The expression API
+covers comparisons, boolean logic, `IN`, null checks, `CASE`, casts, common
+functions, aggregates, windows, and backend-specific capabilities.
+
+Unsupported dialect features are absent at compile time rather than accepted
+and rejected later. For example, PostgreSQL-only helpers such as `ILIKE`,
+arrays, `DISTINCT ON`, and `RETURNING` are exposed only in PostgreSQL builds.
+
+### Transactions and raw SQL
+
+Transactions use the same explicit lifecycle as SQLx:
+
+```rust
+let mut transaction = pool.begin().await?;
+
+db::from(&Post::table())
+    .insert(&PostPatch {
+        title: "Created in a transaction".to_string(),
+        published: false,
+    })
+    .exec(&mut transaction)
+    .await?;
+
+transaction.commit().await?;
+```
+
+`DbTransaction::as_sqlx()` gives access to the underlying SQLx transaction
+when an operation falls outside Mool's builder. Raw SQL is always available:
+
+```rust
+let count = db::query("SELECT COUNT(*) FROM posts WHERE author_id = :author_id")
+    .bind("author_id", 42_i64)
+    .scalar::<i64>(&mut pool)
+    .await?;
+```
+
+## SQL Enums
+
+`SqlEnum` maps fieldless Rust enums to database values and works directly with
+SQLx binds, model fields, filters, and expressions.
+
+```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq, db::SqlEnum)]
 #[sql_enum(rename_all = "snake_case")]
 enum PostStatus {
@@ -85,380 +254,81 @@ enum PostStatus {
 
 #[derive(Debug, Clone, db::Model)]
 #[table(name = "posts")]
-struct Post {
+struct PostWithStatus {
     #[column(primary_key)]
     id: i64,
-    author_id: i64,
-    title: String,
     #[column(sql_enum)]
     status: PostStatus,
 }
-
-#[derive(Debug, Clone, db::Record)]
-#[table(name = "posts")]
-struct PostPatch {
-    title: String,
-    status: PostStatus,
-}
-
-async fn published<S: db::DBSession>(session: &mut S) -> Result<Vec<Post>, db::DbError> {
-    let posts = Post::table();
-
-    db::from(&posts)
-        .filter(posts.status.eq(db::val(PostStatus::Published)))
-        .order_by(posts.id.desc())
-        .all::<Post>()
-        .exec(session)
-        .await
-}
 ```
 
-## Core Pieces
+Text labels are portable and the default. Explicit integer codes are available
+for compact, stable storage. PostgreSQL native enums are schema-aware; MySQL
+native `ENUM` columns are represented in schema metadata.
 
-| Area | What it gives you |
-| --- | --- |
-| `Model` | Table-backed rows, typed table handles, columns, primary keys, schema metadata. |
-| `Record` | Projections, patches, joined records, raw write payloads, and scan metadata. |
-| `SqlEnum` | Rust enum to SQL label/code/native type mapping. |
-| `Filterable` | Request/search structs converted into typed predicates. |
-| Queries | `select`, writes, subqueries, CTEs, variables, functions, aggregates, windows. |
-| Relations | Joined records, explicit references, backrefs, many-to-many predicates, prefetch. |
-| Sessions | One execution shape for pools, transactions, raw SQL, and mocks. |
-| Migrations | [Gaman](https://github.com/vivsh/gaman) schema/migration re-exports plus Mool registries. |
+## Generate Migrations from Your Schema
 
-Crates:
-
-- `mool`: runtime crate for applications
-- `mool-macros`: derive macros re-exported by `mool`
-- `mool-macros-impl`: internal macro implementation
-
-DB-free examples live under `mool/examples/` and cover basic planning, filters,
-relations, enums, migrations embedding, and mock testing.
-
-## Models And Records
-
-Use `Model` for table-backed rows:
+Models provide schema metadata, including keys, references, checks, indexes,
+and enum-backed columns. Build the desired schema directly from Rust models:
 
 ```rust
-#[derive(Debug, Clone, db::Model)]
-#[table(name = "posts")]
-struct Post {
-    #[column(primary_key)]
-    id: i64,
-    author_id: i64,
-    title: String,
-    published: bool,
-}
+let schema = db::schema()
+    .model::<PostWithStatus>()
+    .build()?;
 ```
 
-Foreign-key columns use the same `reference` key as joined records, but with a
-target value:
+That Rust-derived schema can be combined with authored schema SQL. The migration
+workflow compares desired schema state with the committed migration history,
+then generates a deterministic migration for review. Hand-authored SQL remains
+available for changes that need it.
+
+With the `migrations` feature, Mool embeds committed migration YAML files and
+registers migration history with the application:
 
 ```rust
-#[derive(Debug, Clone, db::Model)]
-#[table(name = "posts")]
-struct Post {
-    #[column(primary_key)]
-    id: i64,
-    #[column(reference = "users.id")]
-    author_id: i64,
-    title: String,
-    published: bool,
-}
+static MIGRATIONS: db::migrations::EmbeddedMigrations =
+    db::migrations::embedded_migrations!("migrations");
 ```
 
-Use the structured form when the database constraint needs a stable name:
-
-```rust
-#[column(reference(target = "users.id", name = "posts_author_id_fkey"))]
-author_id: i64,
-```
-
-Use `Record` for projections, patches, joined output, and write-only rows:
-
-```rust
-#[derive(Debug, Clone, db::Record)]
-#[table(name = "posts")]
-struct PostSummary {
-    id: i64,
-    title: String,
-}
-```
-
-## Queries
-
-Queries start from a source and finish with a terminal:
-
-```rust
-let posts = Post::table();
-let author_id = db::var::<i64>().named("author_id");
-
-let rows = db::from(&posts)
-    .filter(posts.author_id.eq(&author_id))
-    .filter(posts.published.eq(db::val(true)))
-    .bind(&author_id, 42_i64)
-    .all::<Post>()
-    .exec(session)
-    .await?;
-```
-
-Terminals:
-
-- reads: `all`, `first`, `one`, `slice`, `count`, `exists`, `scalar`
-- writes: `insert`, `batch_insert`, `update`, `delete`, `upsert`,
-  `batch_upsert`, `returning`
-- derived sources: `subquery`, `cte`
-
-## Writes
-
-```rust
-let posts = Post::table();
-let id = db::var::<i64>().named("id");
-
-db::from(&posts)
-    .insert(&PostPatch {
-        title: "Hello".to_string(),
-        status: PostStatus::Draft,
-    })
-    .exec(session)
-    .await?;
-
-db::from(&posts)
-    .filter(posts.id.eq(&id))
-    .bind(&id, 1_i64)
-    .update(&PostPatch {
-        title: "Published".to_string(),
-        status: PostStatus::Published,
-    })
-    .exec(session)
-    .await?;
-```
-
-## SQL Enums
-
-`SqlEnum` maps fieldless Rust enums to database values.
-
-Storage modes:
-
-| Storage | Backends | Notes |
-| --- | --- | --- |
-| `text` | Postgres, SQLite3, MySQL | Default. Stores labels and emits check metadata. |
-| `int` | Postgres, SQLite3, MySQL | Requires explicit codes and `repr = "i16"`, `"i32"`, or `"i64"`. |
-| `native_postgres` | Postgres | Registers native enum schema metadata. |
-| `native_mysql` | MySQL | Emits `ENUM(...)` column metadata. MySQL migrations are not managed. |
-
-```rust
-#[derive(Debug, Clone, Copy, PartialEq, Eq, db::SqlEnum)]
-#[sql_enum(storage = "int", repr = "i16")]
-enum Priority {
-    #[sql_enum(code = 1)]
-    Low,
-    #[sql_enum(code = 2)]
-    High,
-}
-```
-
-Generated helpers:
-
-```rust
-PostStatus::SQL_NAME;
-PostStatus::SQL_VALUES;
-PostStatus::SQL_STORAGE;
-PostStatus::Published.as_sql_str();
-PostStatus::try_from_sql_str("draft")?;
-```
-
-## Filters
-
-`Filterable` turns API/search structs into typed predicates. Empty `Option`,
-empty `Vec`, and absent optional lists are skipped.
-
-```rust
-#[derive(Debug, Clone, db::Filterable)]
-#[filter(model = Post)]
-struct PostFilter {
-    #[filter(op = "eq")]
-    published: Option<bool>,
-    #[filter(op = "ilike", column = "title")]
-    q: Option<String>,
-    #[filter(op = "in", column = "id")]
-    ids: Vec<i64>,
-}
-
-let rows = db::from(&Post::table())
-    .filter_with(&filter)
-    .all::<Post>()
-    .exec(session)
-    .await?;
-```
-
-## Relations
-
-Joined records use the same `reference` key with join metadata:
-
-```rust
-#[derive(Debug, Clone, db::Model)]
-#[table(name = "users")]
-struct User {
-    #[column(primary_key)]
-    id: i64,
-    display_name: String,
-}
-
-#[derive(Debug, Clone, db::Record)]
-struct PostWithAuthor {
-    #[column(flatten)]
-    post: Post,
-    #[column(reference(on(from = "author_id", to = "id")))]
-    author: User,
-}
-
-let rows = db::from(&Post::table())
-    .all::<PostWithAuthor>()
-    .exec(session)
-    .await?;
-```
-
-Backrefs and many-to-many helpers render correlated predicates and aggregates.
-Use `prefetch` when child rows should be loaded in a second query.
-
-## Subqueries And CTEs
-
-```rust
-#[derive(Debug, Clone, db::Model)]
-#[table(name = "comments")]
-struct Comment {
-    #[column(primary_key)]
-    id: i64,
-    post_id: i64,
-    flagged: bool,
-}
-
-#[derive(Debug, Clone, db::Record)]
-#[table(name = "comments")]
-struct CommentPostId {
-    post_id: i64,
-}
-
-let comments = Comment::table();
-let posts = Post::table();
-
-let visible_post_ids = db::from(&comments)
-    .filter(comments.flagged.eq(db::val(false)))
-    .all::<CommentPostId>()
-    .set(db::out::<CommentPostId>().post_id, &comments.post_id)
-    .subquery()?;
-
-let rows = db::from(&posts)
-    .filter(posts.id.in_(visible_post_ids.pick(&visible_post_ids.post_id)))
-    .all::<Post>()
-    .exec(session)
-    .await?;
-```
-
-Use `cte()` plus `.with(&cte)` when the derived source should be declared in a
-`WITH` clause and reused by the parent query.
-
-## Functions
-
-Legend: yes = implemented, no = unsupported.
-
-| Row function | MySQL | SQLite3 | Postgres |
-| --- | --- | --- | --- |
-| `now`, `coalesce`, `case` | yes | yes | yes |
-| ranking windows: `row_number`, `rank`, `dense_rank` | yes | yes | yes |
-| distribution windows: `percent_rank`, `cume_dist`, `ntile` | yes | yes | yes |
-| value windows: `lag`, `lead`, `first_value`, `last_value`, `nth_value` | yes | yes | yes |
-| JSON path helpers | yes | yes | yes |
-| `json::postgres::contains` | no | no | yes |
-| SQL array helpers | no | no | yes |
-| `postgres::unaccent` | no | no | yes |
-| custom functions: `funcs::func`, `funcs::custom` | yes | yes | yes |
-
-| Aggregate | MySQL | SQLite3 | Postgres |
-| --- | --- | --- | --- |
-| `count`, `count_all` | yes | yes | yes |
-| `sum`, `avg`, `min`, `max` | yes | yes | yes |
-
-Aggregates work with `group_by`, `having`, scalar terminals, output
-assignments, and `over(window())` where the backend supports windows.
-
-## Migrations
-
-With `migrations`, Mool re-exports [Gaman](https://github.com/vivsh/gaman)
-schema/migration tools and adds registries for root and crate-owned migration
-sources.
-
-```rust
-static MIGRATIONS: db::EmbeddedMigrations =
-    db::embedded_migrations!("migrations");
-
-fn schema() -> Result<db::Schema, db::SchemaLoadError> {
-    db::schema(db::Dialect::Postgres)
-        .model::<Post>()
-        .build()
-}
-
-let mut registry = db::MigrationRegistry::new();
-registry.register(db::root_migration(&MIGRATIONS))?;
-registry.register_schema(db::root_schema(schema))?;
-```
-
-Mool owns the app-facing `embedded_migrations!` macro. Gaman owns the runtime
-`EmbeddedMigrations` type and migration engine.
-
-Use `db::schema(...)` instead of raw `SchemaBuilder` when models include native
-enum fields.
+Register the resulting desired schema and embedded history with
+`MigrationRegistry` at the application boundary. The generated migration is a
+normal reviewed file, not an opaque runtime schema change.
 
 ## Testing
 
-`MockDBSession` records statements and returns planned responses.
+Mool supports database-free testing through planned SQL and `MockDbSession`.
+The mock records ordered statements and can return planned query responses, so
+unit tests can assert application behavior without booting a database.
 
 ```rust
-use mool::mock::{DbCallKind, MockDBSession, PlannedCall, PlannedResponse};
-
-let mut session = MockDBSession::new();
-session.plan(PlannedCall {
-    kind: DbCallKind::FetchAll,
-    sql_contains: Some("FROM posts"),
-    response: PlannedResponse::OkAnyVec(Box::new(Vec::<Post>::new())),
-});
-
-let rows = db::from(&Post::table())
+let plan = db::from(&Post::table())
+    .filter(Post::table().published.eq(db::val(true)))
     .all::<Post>()
-    .exec(&mut session)
-    .await?;
+    .plan()?;
+
+assert!(plan.sql.contains("WHERE"));
 ```
 
-## Verification
+The project maintains offline SQL golden tests across supported dialects,
+macro compile-contract tests, SQLx compatibility checks, and database-free
+examples. Run the local confidence suite with:
 
 ```sh
-cargo test --workspace
-cargo test -p mool --no-default-features --features sqlite
-cargo test -p mool --no-default-features --features postgres
-cargo test -p mool --no-default-features --features mysql
-cargo test -p mool --no-default-features --features "sqlite migrations"
-cargo test -p mool --no-default-features --features "postgres migrations"
-cargo check -p mool --release --no-default-features --features sqlite
-cargo check -p mool --release --no-default-features --features "sqlite mock"
-cargo check -p mool --examples --no-default-features --features "sqlite mock migrations"
-cargo clippy --workspace
-cargo package -p mool-macros
-cargo package -p mool
+scripts/confidence-check.sh
 ```
 
-The Cargo test matrix is DB-free. SQL generation is covered by an offline
-golden conformance suite across query shapes, bind metadata, and dialect
-differences for Postgres, SQLite, and MySQL. Macro contracts are checked with
-`trybuild`, public examples compile without databases, and
-`scripts/confidence-check.sh` runs the full local confidence matrix including
-the release-only mock feature gate.
+For live backend validation, use `scripts/integration-tests.sh <backend> all`.
 
-## Boundary
+## What Mool Provides
 
-Mool owns database concerns: pools, sessions, records, models, typed queries,
-filters, relations, raw SQL, schema metadata, migrations, enum mappings, and
-test mocks.
+| Area | Capability |
+| --- | --- |
+| Mapping | Models, records, row scanning, typed table and column handles |
+| Queries | Selects, batch insert/upsert/update, conflict handling, returning, variables, subqueries, CTEs, functions, aggregates, windows |
+| Application queries | Typed filters, relations, backrefs, many-to-many predicates, prefetch, pagination |
+| Database access | SQLx pools and transactions, raw SQL, prepared bind metadata, mock sessions |
+| Schema | Keys, references, constraints, indexes, custom types, `SqlEnum` metadata |
+| Migrations | Desired schema from Rust models and schema SQL, deterministic generated migrations, embedded migration registration |
 
-Framework concerns belong outside Mool: routing, commands, templates, assets,
-uploads, task queues, notifications, and UI.
+Mool keeps SQL explicit while removing the repetitive parts of building and
+maintaining typed database code.

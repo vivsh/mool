@@ -1,0 +1,13 @@
+error[E0433]: failed to resolve: could not find `array` in `funcs`
+ --> tests/compile/fail/unsupported_postgres_array.rs:2:26
+  |
+2 |     let _ = mool::funcs::array::value(vec![1_i64]);
+  |                          ^^^^^ could not find `array` in `funcs`
+  |
+note: found an item that was configured out
+ --> src/queries/mod.rs
+  |
+  |     #[cfg(feature = "postgres")]
+  |           -------------------- the item is gated behind the `postgres` feature
+  |     pub use super::functions::arrays as array;
+  |                                         ^^^^^

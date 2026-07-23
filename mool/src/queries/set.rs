@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 
 use crate::argvalue::ArgValue;
 use crate::commons::{Arguments, Row};
-use crate::executor::{DBSession, DbError};
+use crate::executor::{DbError, DbSession};
 use crate::interfaces::Record;
 use crate::placeholders::Dialect;
 
@@ -88,18 +88,23 @@ where
     }
 
     /// Renders SQL and parameter metadata without executing the set query.
-    pub fn plan(&self, dialect: Dialect) -> Result<QueryPlan, QueryError> {
-        self.left
-            .plan_set_all::<T>(&self.right, self.op, &self.binds, &self.errors, dialect)
+    pub fn plan(&self) -> Result<QueryPlan, QueryError> {
+        self.left.plan_set_all::<T>(
+            &self.right,
+            self.op,
+            &self.binds,
+            &self.errors,
+            Dialect::active(),
+        )
     }
 
     /// Executes this set query against a database session.
     pub async fn exec<S>(self, session: &mut S) -> Result<Vec<T>, DbError>
     where
         T: for<'r> sqlx::FromRow<'r, Row> + Send + Unpin + 'static,
-        S: DBSession,
+        S: DbSession,
     {
-        let stmt = statement_from_plan(self.plan(Dialect::active())?, Arguments::default())?;
+        let stmt = statement_from_plan(self.plan()?, Arguments::default())?;
         session.fetch_all(stmt).await
     }
 }

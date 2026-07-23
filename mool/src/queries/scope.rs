@@ -7,9 +7,10 @@ use std::sync::Arc;
 use crate::argvalue::ArgValue;
 use crate::commons::Arguments;
 use crate::filters::{FilterBuilder, Filterable};
-use crate::interfaces::Record;
+use crate::interfaces::{Model, Record};
 use crate::placeholders::Dialect;
 
+use super::batch::BatchInsertMode;
 use super::binds::validate_output_assignments;
 use super::expr::{ExprNode, IntoExpr, OrderExpr, Predicate};
 use super::handles::{Var, VarId};
@@ -17,12 +18,16 @@ use super::output::{IntoOutputTarget, ReturningUsing, SelectAssignment, select_a
 use super::plan::QueryPlan;
 use super::render::SelectModel;
 use super::source::{Cte, CteData, CteSource, Source, Subquery, SubqueryData, SubquerySource};
-use super::traits::{IntoColumnRef, Projectable};
+use super::traits::Projectable;
 use super::validate::{
     generated_source_name, validate_returning_projection, validate_returning_supported,
 };
 use super::values::WriteInput;
 use crate::QueryError;
+#[cfg(any(feature = "postgres", feature = "mysql", feature = "mariadb"))]
+use crate::query_error::LockMode;
+#[cfg(any(feature = "postgres", feature = "mysql"))]
+use crate::query_error::LockWait;
 
 /// Composable query scope rooted at one table.
 #[derive(Clone)]
@@ -33,6 +38,12 @@ pub struct QueryScope {
     pub(super) groups: Vec<ExprNode>,
     pub(super) having: Vec<Predicate>,
     pub(super) orders: Vec<OrderExpr>,
+    pub(super) distinct: bool,
+    pub(super) distinct_on: Vec<ExprNode>,
+    #[cfg(any(feature = "postgres", feature = "mysql", feature = "mariadb"))]
+    pub(super) lock: Option<LockMode>,
+    #[cfg(any(feature = "postgres", feature = "mysql"))]
+    pub(super) lock_wait: Option<LockWait>,
     pub(super) output_assignments: Vec<SelectAssignment>,
     pub(super) binds: HashMap<VarId, ArgValue>,
     pub(super) errors: Vec<QueryError>,
@@ -53,6 +64,12 @@ impl QueryScope {
             groups: Vec::new(),
             having: Vec::new(),
             orders: Vec::new(),
+            distinct: false,
+            distinct_on: Vec::new(),
+            #[cfg(any(feature = "postgres", feature = "mysql", feature = "mariadb"))]
+            lock: None,
+            #[cfg(any(feature = "postgres", feature = "mysql"))]
+            lock_wait: None,
             output_assignments: Vec::new(),
             binds: HashMap::new(),
             errors: Vec::new(),
@@ -91,6 +108,47 @@ impl QueryScope {
     /// Adds an ORDER BY expression.
     pub fn order_by(mut self, expr: OrderExpr) -> Self {
         self.orders.push(expr);
+        self
+    }
+
+    /// Removes duplicate rows from row-returning select terminals.
+    pub fn distinct(mut self) -> Self {
+        if !self.distinct_on.is_empty() {
+            self.errors.push(QueryError::InvalidModifier {
+                modifier: "distinct",
+                terminal: "a DISTINCT ON query",
+            });
+        }
+        self.distinct = true;
+        self
+    }
+
+    #[cfg(feature = "postgres")]
+    pub(crate) fn with_distinct_on<T>(mut self, expr: impl IntoExpr<T>) -> Self {
+        if self.distinct {
+            self.errors.push(QueryError::InvalidModifier {
+                modifier: "distinct on",
+                terminal: "a DISTINCT query",
+            });
+        }
+        self.distinct_on.push(expr.into_expr().node);
+        self
+    }
+
+    #[cfg(any(feature = "postgres", feature = "mysql", feature = "mariadb"))]
+    pub(crate) fn with_lock(mut self, mode: LockMode) -> Self {
+        self.lock = Some(mode);
+        self
+    }
+
+    #[cfg(any(feature = "postgres", feature = "mysql"))]
+    pub(crate) fn with_lock_wait(mut self, wait: LockWait) -> Self {
+        if self.lock.is_none() {
+            self.errors.push(QueryError::InvalidLock {
+                reason: "a wait modifier requires a row lock",
+            });
+        }
+        self.lock_wait = Some(wait);
         self
     }
 
@@ -210,8 +268,8 @@ impl QueryScope {
         })
     }
 
-    /// Uses a record projection as the `RETURNING` shape for write terminals.
-    pub fn returning<R>(self) -> ReturningScope<R>
+    #[cfg(any(feature = "postgres", feature = "sqlite"))]
+    pub(crate) fn into_returning<R>(self) -> ReturningScope<R>
     where
         R: Record,
     {
@@ -290,9 +348,10 @@ where
         self.scope.plan_delete_returning(dialect, &model)
     }
 
-    pub(super) fn plan_batch_insert<T>(
+    pub(super) fn plan_batch_insert_mode<T>(
         &self,
         rows: &[T],
+        mode: &BatchInsertMode,
         dialect: Dialect,
     ) -> Result<(QueryPlan, Arguments<'static>), QueryError>
     where
@@ -300,22 +359,36 @@ where
     {
         let model = self.model(dialect)?;
         self.scope
-            .plan_batch_insert_returning(rows, dialect, &model)
+            .plan_batch_insert_mode_with_args(rows, dialect, mode, Some(&model))
     }
 
-    pub(super) fn plan_batch_upsert<T, I, C>(
+    pub(super) fn plan_batch_update<T>(
         &self,
         rows: &[T],
-        conflict: I,
+        update_columns: &[super::expr::ColumnRef],
         dialect: Dialect,
     ) -> Result<(QueryPlan, Arguments<'static>), QueryError>
     where
-        T: Record + 'static,
-        I: IntoIterator<Item = C>,
-        C: IntoColumnRef,
+        T: Model + 'static,
     {
         let model = self.model(dialect)?;
         self.scope
-            .plan_batch_upsert_returning(rows, conflict, dialect, &model)
+            .plan_batch_update_with_args(rows, update_columns, dialect, Some(&model))
+    }
+
+    #[cfg(feature = "postgres")]
+    pub(super) fn plan_batch_unnest<T>(
+        &self,
+        rows: &[T],
+        mode: &BatchInsertMode,
+        dialect: Dialect,
+    ) -> Result<(QueryPlan, Arguments<'static>), QueryError>
+    where
+        T: crate::BatchRecord + 'static,
+        T::BatchColumns: crate::backend::PgBatchColumns,
+    {
+        let model = self.model(dialect)?;
+        self.scope
+            .plan_batch_unnest_with_args(rows, dialect, mode, Some(&model))
     }
 }

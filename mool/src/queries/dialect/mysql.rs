@@ -10,10 +10,6 @@ use crate::QueryError;
 pub(super) struct MysqlSpec;
 
 impl DialectRenderer for MysqlSpec {
-    fn dialect(&self) -> Dialect {
-        Dialect::Mysql
-    }
-
     fn placeholder(&self, _position: usize) -> String {
         "?".to_string()
     }
@@ -21,7 +17,7 @@ impl DialectRenderer for MysqlSpec {
     fn validate_feature(&self, feature: DialectFeature) -> Result<(), QueryError> {
         match feature {
             DialectFeature::Returning | DialectFeature::Ilike => {
-                Err(common::unsupported(self.dialect(), feature.name()))
+                Err(common::unsupported(Dialect::Mysql, feature.name()))
             }
             DialectFeature::Upsert | DialectFeature::WindowFunctions => Ok(()),
         }

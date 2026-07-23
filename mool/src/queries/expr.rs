@@ -43,6 +43,16 @@ pub(super) enum ExprNode {
         op: &'static str,
         expr: Box<ExprNode>,
     },
+    NullCheck {
+        expr: Box<ExprNode>,
+        negated: bool,
+    },
+    Between {
+        expr: Box<ExprNode>,
+        lower: Box<ExprNode>,
+        upper: Box<ExprNode>,
+        negated: bool,
+    },
     Bool {
         left: Box<ExprNode>,
         op: &'static str,
@@ -67,6 +77,7 @@ pub(super) enum ExprNode {
     InList {
         left: Box<ExprNode>,
         values: Vec<ExprNode>,
+        negated: bool,
     },
     RelationExists {
         reference: ReferenceMeta,
@@ -90,7 +101,7 @@ pub(super) enum ExprNode {
     },
 }
 
-#[doc(hidden)]
+/// Type-erased column identity for advanced dynamic column collections.
 #[derive(Clone)]
 pub struct ColumnRef {
     pub(super) owner: ColumnOwner,
@@ -120,6 +131,7 @@ impl<T> Expr<T> {
     }
 
     /// Adds two typed expressions.
+    #[allow(clippy::should_implement_trait)]
     pub fn add<R>(self, rhs: R) -> Self
     where
         R: IntoExpr<T>,
@@ -131,6 +143,41 @@ impl<T> Expr<T> {
         })
     }
 
+    /// Subtracts one typed expression from another.
+    #[allow(clippy::should_implement_trait)]
+    pub fn sub<R>(self, rhs: R) -> Self
+    where
+        R: IntoExpr<T>,
+    {
+        self.arithmetic("-", rhs)
+    }
+
+    /// Multiplies two typed expressions.
+    #[allow(clippy::should_implement_trait)]
+    pub fn mul<R>(self, rhs: R) -> Self
+    where
+        R: IntoExpr<T>,
+    {
+        self.arithmetic("*", rhs)
+    }
+
+    /// Divides one typed expression by another.
+    #[allow(clippy::should_implement_trait)]
+    pub fn div<R>(self, rhs: R) -> Self
+    where
+        R: IntoExpr<T>,
+    {
+        self.arithmetic("/", rhs)
+    }
+
+    /// Computes the remainder of two typed expressions.
+    pub fn modulo<R>(self, rhs: R) -> Self
+    where
+        R: IntoExpr<T>,
+    {
+        self.arithmetic("%", rhs)
+    }
+
     /// Equality predicate.
     pub fn eq<R>(self, rhs: R) -> Predicate
     where
@@ -139,12 +186,72 @@ impl<T> Expr<T> {
         self.compare("=", rhs)
     }
 
+    /// Inequality predicate.
+    pub fn ne<R>(self, rhs: R) -> Predicate
+    where
+        R: IntoExpr<T>,
+    {
+        self.compare("!=", rhs)
+    }
+
+    /// Less-than predicate.
+    pub fn lt<R>(self, rhs: R) -> Predicate
+    where
+        R: IntoExpr<T>,
+    {
+        self.compare("<", rhs)
+    }
+
+    /// Less-than-or-equal predicate.
+    pub fn lte<R>(self, rhs: R) -> Predicate
+    where
+        R: IntoExpr<T>,
+    {
+        self.compare("<=", rhs)
+    }
+
     /// Greater-than predicate.
     pub fn gt<R>(self, rhs: R) -> Predicate
     where
         R: IntoExpr<T>,
     {
         self.compare(">", rhs)
+    }
+
+    /// Greater-than-or-equal predicate.
+    pub fn gte<R>(self, rhs: R) -> Predicate
+    where
+        R: IntoExpr<T>,
+    {
+        self.compare(">=", rhs)
+    }
+
+    /// Tests whether this expression is SQL `NULL`.
+    pub fn is_null(&self) -> Predicate {
+        self.null_check(false)
+    }
+
+    /// Tests whether this expression is not SQL `NULL`.
+    pub fn is_not_null(&self) -> Predicate {
+        self.null_check(true)
+    }
+
+    /// Tests whether this expression is within an inclusive range.
+    pub fn between<L, U>(self, lower: L, upper: U) -> Predicate
+    where
+        L: IntoExpr<T>,
+        U: IntoExpr<T>,
+    {
+        self.range(lower, upper, false)
+    }
+
+    /// Tests whether this expression is outside an inclusive range.
+    pub fn not_between<L, U>(self, lower: L, upper: U) -> Predicate
+    where
+        L: IntoExpr<T>,
+        U: IntoExpr<T>,
+    {
+        self.range(lower, upper, true)
     }
 
     /// Ascending order expression.
@@ -180,6 +287,92 @@ impl<T> Expr<T> {
             op,
             right: Box::new(rhs.into_expr().node),
         })
+    }
+
+    fn arithmetic<R>(self, op: &'static str, rhs: R) -> Self
+    where
+        R: IntoExpr<T>,
+    {
+        Self::new(ExprNode::Binary {
+            left: Box::new(self.node),
+            op,
+            right: Box::new(rhs.into_expr().node),
+        })
+    }
+
+    fn null_check(&self, negated: bool) -> Predicate {
+        Predicate::new(ExprNode::NullCheck {
+            expr: Box::new(self.node.clone()),
+            negated,
+        })
+    }
+
+    fn range<L, U>(self, lower: L, upper: U, negated: bool) -> Predicate
+    where
+        L: IntoExpr<T>,
+        U: IntoExpr<T>,
+    {
+        Predicate::new(ExprNode::Between {
+            expr: Box::new(self.node),
+            lower: Box::new(lower.into_expr().node),
+            upper: Box::new(upper.into_expr().node),
+            negated,
+        })
+    }
+}
+
+impl<T, R> std::ops::Add<R> for Expr<T>
+where
+    R: IntoExpr<T>,
+{
+    type Output = Self;
+
+    fn add(self, rhs: R) -> Self::Output {
+        self.arithmetic("+", rhs)
+    }
+}
+
+impl<T, R> std::ops::Sub<R> for Expr<T>
+where
+    R: IntoExpr<T>,
+{
+    type Output = Self;
+
+    fn sub(self, rhs: R) -> Self::Output {
+        self.arithmetic("-", rhs)
+    }
+}
+
+impl<T, R> std::ops::Mul<R> for Expr<T>
+where
+    R: IntoExpr<T>,
+{
+    type Output = Self;
+
+    fn mul(self, rhs: R) -> Self::Output {
+        self.arithmetic("*", rhs)
+    }
+}
+
+impl<T, R> std::ops::Div<R> for Expr<T>
+where
+    R: IntoExpr<T>,
+{
+    type Output = Self;
+
+    fn div(self, rhs: R) -> Self::Output {
+        self.arithmetic("/", rhs)
+    }
+}
+
+impl<T, R> std::ops::Rem<R> for Expr<T>
+where
+    R: IntoExpr<T>,
+{
+    type Output = Self;
+
+    fn rem(self, rhs: R) -> Self::Output {
+        self.arithmetic("%", rhs)
     }
 }
 
@@ -220,6 +413,24 @@ where
             .into_iter()
             .map(|value| value.into_expr().node)
             .collect(),
+        negated: false,
+    })
+}
+
+#[doc(hidden)]
+pub fn not_in_list<T, L, I, V>(left: L, values: I) -> Predicate
+where
+    L: IntoExpr<T>,
+    I: IntoIterator<Item = V>,
+    V: IntoExpr<T>,
+{
+    Predicate::new(ExprNode::InList {
+        left: Box::new(left.into_expr().node),
+        values: values
+            .into_iter()
+            .map(|value| value.into_expr().node)
+            .collect(),
+        negated: true,
     })
 }
 
@@ -279,6 +490,7 @@ impl Predicate {
     }
 
     /// Negates this predicate with SQL `NOT`.
+    #[allow(clippy::should_implement_trait)]
     pub fn not(self) -> Self {
         std::ops::Not::not(self)
     }

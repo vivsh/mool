@@ -1,8 +1,15 @@
 #[cfg(feature = "migrations")]
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{
+    collections::{BTreeMap, HashSet},
+    path::{Path, PathBuf},
+};
 
 #[cfg(feature = "migrations")]
 use thiserror::Error;
+
+/// Command-runner types for applications that integrate Mool migrations.
+#[cfg(feature = "migrations")]
+pub mod engine;
 
 #[cfg(feature = "migrations")]
 pub use gaman::EmbeddedMigrations;
@@ -219,6 +226,119 @@ impl MigrationRegistry {
                 Ok(())
             }
         }
+    }
+}
+
+#[cfg(feature = "migrations")]
+impl gaman::core::MigrationStore for MigrationRegistry {
+    fn load_all<'a>(
+        &'a self,
+    ) -> gaman::core::BoxFuture<'a, Result<Vec<gaman::Migration>, gaman::core::StoreError>> {
+        Box::pin(async move { self.load_migrations() })
+    }
+
+    fn save<'a>(
+        &'a self,
+        migration: &'a gaman::Migration,
+    ) -> gaman::core::BoxFuture<'a, Result<(), gaman::core::StoreError>> {
+        Box::pin(async move {
+            Err(gaman::core::StoreError::Save {
+                id: migration.id.clone(),
+                message: "Mool's application registry is read-only".to_string(),
+            })
+        })
+    }
+}
+
+#[cfg(feature = "migrations")]
+impl MigrationRegistry {
+    /// Loads and qualifies every registered migration using Gaman's store contract.
+    fn load_migrations(&self) -> Result<Vec<gaman::Migration>, gaman::core::StoreError> {
+        let mut migrations = Vec::new();
+        let mut ids = HashSet::new();
+        if let Some(root) = self.root {
+            collect_embedded(root.embedded(), None, &mut migrations, &mut ids)?;
+        }
+        for (namespace, source) in &self.crates {
+            collect_embedded(
+                source.embedded(),
+                Some(namespace),
+                &mut migrations,
+                &mut ids,
+            )?;
+        }
+        Ok(migrations)
+    }
+}
+
+#[cfg(feature = "migrations")]
+fn collect_embedded(
+    node: &'static EmbeddedMigrations,
+    namespace: Option<&str>,
+    migrations: &mut Vec<gaman::Migration>,
+    ids: &mut HashSet<String>,
+) -> Result<(), gaman::core::StoreError> {
+    for (filename, content) in node.files {
+        migrations.push(parse_embedded(filename, content, namespace, ids)?);
+    }
+    for (child, child_node) in node.children {
+        let child_namespace = qualify(namespace, child);
+        collect_embedded(child_node, Some(&child_namespace), migrations, ids)?;
+    }
+    Ok(())
+}
+
+#[cfg(feature = "migrations")]
+fn parse_embedded(
+    filename: &str,
+    content: &str,
+    namespace: Option<&str>,
+    ids: &mut HashSet<String>,
+) -> Result<gaman::Migration, gaman::core::StoreError> {
+    let local_id = Path::new(filename)
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| {
+            store_load_error(None, format!("invalid migration filename '{filename}'"))
+        })?;
+    let mut migration = gaman::Migration::from_yaml_str(content)
+        .map_err(|error| store_load_error(Some(filename), error.to_string()))?;
+    migration.id = qualify(namespace, local_id);
+    migration.dependencies = migration
+        .dependencies
+        .into_iter()
+        .map(|dependency| qualify_dependency(namespace, dependency))
+        .collect();
+    if !ids.insert(migration.id.clone()) {
+        return Err(store_load_error(
+            Some(&migration.id),
+            "duplicate qualified migration id",
+        ));
+    }
+    Ok(migration)
+}
+
+#[cfg(feature = "migrations")]
+fn qualify(namespace: Option<&str>, id: &str) -> String {
+    namespace
+        .map(|namespace| format!("{namespace}/{id}"))
+        .unwrap_or_else(|| id.to_string())
+}
+
+#[cfg(feature = "migrations")]
+fn qualify_dependency(namespace: Option<&str>, dependency: String) -> String {
+    if dependency.contains('/') {
+        dependency
+    } else {
+        qualify(namespace, &dependency)
+    }
+}
+
+#[cfg(feature = "migrations")]
+fn store_load_error(id: Option<&str>, message: impl Into<String>) -> gaman::core::StoreError {
+    gaman::core::StoreError::Load {
+        id: id.map(str::to_owned),
+        message: message.into(),
     }
 }
 

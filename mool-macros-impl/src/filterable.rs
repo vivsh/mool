@@ -177,6 +177,9 @@ fn filter_statement(
     if op == FilterOp::In {
         return in_filter_statement(field, ty, column, crate_path);
     }
+    if op == FilterOp::ILike {
+        return ilike_filter_statement(field, ty, column, crate_path);
+    }
     let method = op.method();
     if option_inner_type(ty).is_some() {
         return Ok(quote! {
@@ -188,6 +191,33 @@ fn filter_statement(
     }
     Ok(quote! {
         let predicate = filter.#column.#method(#crate_path::val(self.#field.clone()));
+        filter = filter.filter(predicate);
+    })
+}
+
+/// Emits a backend-qualified `ILIKE` call so callers do not need the extension trait in scope.
+fn ilike_filter_statement(
+    field: &Ident,
+    ty: &Type,
+    column: &Ident,
+    crate_path: &proc_macro2::TokenStream,
+) -> Result<proc_macro2::TokenStream, Error> {
+    if option_inner_type(ty).is_some() {
+        return Ok(quote! {
+            if let Some(value) = &self.#field {
+                let predicate = #crate_path::backend::TextSearchExt::ilike(
+                    &filter.#column,
+                    #crate_path::val(value.clone()),
+                );
+                filter = filter.filter(predicate);
+            }
+        });
+    }
+    Ok(quote! {
+        let predicate = #crate_path::backend::TextSearchExt::ilike(
+            &filter.#column,
+            #crate_path::val(self.#field.clone()),
+        );
         filter = filter.filter(predicate);
     })
 }

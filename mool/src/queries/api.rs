@@ -89,7 +89,7 @@ where
 pub mod __private {
     use std::sync::Arc;
 
-    pub use super::super::expr::{ColumnRef, IntoSourceColumn, in_list};
+    pub use super::super::expr::{ColumnRef, IntoSourceColumn, in_list, not_in_list};
     pub use super::super::handles::{Column, ModelTable, Reference, Table, Var};
     pub use super::super::output::{HasOutputCols, OutputColumn, OutputSource};
     pub use super::super::source::{ProjectedColumn, ProjectionSource};

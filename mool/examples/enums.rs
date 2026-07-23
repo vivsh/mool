@@ -18,20 +18,20 @@ struct Post {
     status: PostStatus,
 }
 
-fn main() -> Result<(), db::SchemaLoadError> {
+fn main() -> Result<(), db::schema::SchemaLoadError> {
     let posts = Post::table();
     let plan = db::from(&posts)
         .filter(posts.status.eq(db::val(PostStatus::Published)))
         .all::<Post>()
-        .plan(db::queries::Dialect::Postgres)
+        .plan()
         .expect("valid enum query");
-    let schema = db::schema(db::Dialect::Postgres).model::<Post>().build()?;
+    let schema = db::schema().model::<Post>().build()?;
 
     assert!(plan.sql.contains("post.status = $1"));
     assert!(schema.tables["posts"].constraints.iter().any(|constraint| {
         matches!(
             constraint,
-            db::Constraint::Check { expression, .. } if expression.contains("published")
+            db::schema::Constraint::Check { expression, .. } if expression.contains("published")
         )
     }));
     Ok(())

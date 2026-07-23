@@ -56,7 +56,7 @@ pub fn resolve_placeholders(
                         output.push_str(&pos.to_string()); // swap to itoa if you care
                     }
 
-                    Dialect::Mysql | Dialect::Sqlite => {
+                    Dialect::Mysql | Dialect::Mariadb | Dialect::Sqlite => {
                         let value = values
                             .get(name)
                             .ok_or_else(|| PlaceholderError::MissingValue(name.to_string()))?;

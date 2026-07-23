@@ -1,6 +1,6 @@
 //! Public trait implemented by `#[derive(SqlEnum)]`.
 
-use crate::Dialect;
+use gaman::core::Dialect;
 
 use super::{SqlEnumError, SqlEnumStorage};
 

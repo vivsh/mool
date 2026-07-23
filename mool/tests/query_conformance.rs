@@ -1,3 +1,5 @@
+#![cfg(feature = "postgres")]
+
 mod common;
 
 use common::{
@@ -9,7 +11,10 @@ use common::{
 use mool as db;
 use mool::Model;
 use mool::SqlEnum;
-use mool::queries::{Dialect, ParamSource};
+use mool::backend::PostgresUnnestExt;
+#[cfg(any(feature = "postgres", feature = "sqlite"))]
+use mool::backend::ReturningExt;
+use mool::queries::ParamSource;
 
 /// Verifies the core read renderer covers projections, filters, grouping, ordering, and bind metadata.
 #[test]
@@ -30,7 +35,7 @@ fn read_golden_query_covers_projection_filters_grouping_and_binds() {
             &out.avg_id,
             db::funcs::coalesce(db::funcs::avg(post.id.clone()), db::val(0.0_f64)),
         )
-        .plan(Dialect::Postgres)
+        .plan()
         .unwrap();
 
     assert_plan(
@@ -49,18 +54,12 @@ fn read_terminal_golden_queries_cover_limits_aggregates_and_windows() {
     let post = Post::table();
 
     assert_plan(
-        &db::from(&post)
-            .one::<Post>()
-            .plan(Dialect::Postgres)
-            .unwrap(),
+        &db::from(&post).one::<Post>().plan().unwrap(),
         "SELECT post.id, post.author_id, post.title, post.published, post.created_at, post.subtitle FROM posts post LIMIT 2 OFFSET 0",
         BindMeta::new(0, 0, 0),
     );
     assert_plan(
-        &db::from(&post)
-            .first::<Post>()
-            .plan(Dialect::Postgres)
-            .unwrap(),
+        &db::from(&post).first::<Post>().plan().unwrap(),
         "SELECT post.id, post.author_id, post.title, post.published, post.created_at, post.subtitle FROM posts post LIMIT 1 OFFSET 0",
         BindMeta::new(0, 0, 0),
     );
@@ -68,7 +67,7 @@ fn read_terminal_golden_queries_cover_limits_aggregates_and_windows() {
         &db::from(&post)
             .filter(post.published.eq(db::val(true)))
             .count()
-            .plan(Dialect::Postgres)
+            .plan()
             .unwrap(),
         "SELECT COUNT(*) FROM posts post WHERE (post.published = $1)",
         BindMeta::new(0, 1, 1),
@@ -77,7 +76,7 @@ fn read_terminal_golden_queries_cover_limits_aggregates_and_windows() {
         &db::from(&post)
             .filter(post.published.eq(db::val(true)))
             .exists()
-            .plan(Dialect::Postgres)
+            .plan()
             .unwrap(),
         "SELECT EXISTS(SELECT 1 FROM posts post WHERE (post.published = $1))",
         BindMeta::new(0, 1, 1),
@@ -85,7 +84,7 @@ fn read_terminal_golden_queries_cover_limits_aggregates_and_windows() {
     assert_plan(
         &db::from(&post)
             .scalar(db::funcs::max(post.id.clone()))
-            .plan(Dialect::Postgres)
+            .plan()
             .unwrap(),
         "SELECT MAX(post.id) FROM posts post",
         BindMeta::new(0, 0, 0),
@@ -104,14 +103,14 @@ fn read_terminal_golden_queries_cover_limits_aggregates_and_windows() {
                 db::funcs::row_number().over(window.clone()),
             )
             .set(&out.rank, db::funcs::rank().over(window))
-            .plan(Dialect::Postgres)
+            .plan()
             .unwrap(),
         "SELECT post.id AS id, ROW_NUMBER() OVER (PARTITION BY post.author_id ORDER BY post.id ASC) AS row_number, RANK() OVER (PARTITION BY post.author_id ORDER BY post.id ASC) AS rank FROM posts post",
         BindMeta::new(0, 0, 0),
     );
 }
 
-/// Verifies backend-specific placeholder behavior and typed variable parameter metadata.
+/// Verifies PostgreSQL placeholder reuse and typed variable parameter metadata.
 #[test]
 fn dialect_matrix_covers_placeholders_variable_reuse_and_unsupported_features() {
     let post = Post::table();
@@ -121,7 +120,7 @@ fn dialect_matrix_covers_placeholders_variable_reuse_and_unsupported_features() 
         .filter(post.id.gte(&id).and(post.author_id.eq(&id)))
         .bind(&id, 10_i64)
         .all::<Post>()
-        .plan(Dialect::Postgres)
+        .plan()
         .unwrap();
     assert_plan(
         &pg,
@@ -129,46 +128,6 @@ fn dialect_matrix_covers_placeholders_variable_reuse_and_unsupported_features() 
         BindMeta::new(0, 1, 1),
     );
     assert_param(&pg, "id", ParamSource::Var, 1, &[1, 1]);
-
-    let mysql = db::from(&post)
-        .filter(post.id.gte(&id).and(post.author_id.eq(&id)))
-        .bind(&id, 10_i64)
-        .all::<Post>()
-        .plan(Dialect::Mysql)
-        .unwrap();
-    assert_plan(
-        &mysql,
-        "SELECT post.id, post.author_id, post.title, post.published, post.created_at, post.subtitle FROM posts post WHERE ((post.id >= ?) AND (post.author_id = ?))",
-        BindMeta::new(0, 2, 2),
-    );
-    assert_param(&mysql, "id", ParamSource::Var, 1, &[1, 2]);
-
-    let sqlite = db::from(&post)
-        .filter(post.id.eq(&id))
-        .bind(&id, 10_i64)
-        .all::<Post>()
-        .plan(Dialect::Sqlite)
-        .unwrap();
-    assert_plan(
-        &sqlite,
-        "SELECT post.id, post.author_id, post.title, post.published, post.created_at, post.subtitle FROM posts post WHERE (post.id = ?)",
-        BindMeta::new(0, 1, 1),
-    );
-
-    assert_unsupported(
-        db::from(&post)
-            .filter(post.title.ilike(db::val("%mool%".to_string())))
-            .all::<Post>()
-            .plan(Dialect::Mysql),
-        "ILIKE",
-    );
-    assert_unsupported(
-        db::from(&post)
-            .filter(post.title.ilike(db::val("%mool%".to_string())))
-            .all::<Post>()
-            .plan(Dialect::Sqlite),
-        "ILIKE",
-    );
 }
 
 /// Verifies write rendering covers row payloads, expression writes, upsert dialects, and returning.
@@ -198,10 +157,7 @@ fn write_golden_queries_cover_mutations_upserts_and_returning() {
     ];
 
     assert_plan(
-        &db::from(&post)
-            .insert(&row)
-            .plan(Dialect::Postgres)
-            .unwrap(),
+        &db::from(&post).insert(&row).plan().unwrap(),
         "INSERT INTO posts (id, author_id, title, published, created_at, subtitle) VALUES ($1, $2, $3, $4, $5, $6)",
         BindMeta::new(6, 0, 6),
     );
@@ -214,7 +170,7 @@ fn write_golden_queries_cover_mutations_upserts_and_returning() {
                     db::funcs::coalesce(post.title.clone(), db::val("untitled".to_string())),
                 )
             })
-            .plan(Dialect::Postgres)
+            .plan()
             .unwrap(),
         "UPDATE posts SET title = COALESCE(title, $1) WHERE (id = $2)",
         BindMeta::new(0, 2, 2),
@@ -223,50 +179,32 @@ fn write_golden_queries_cover_mutations_upserts_and_returning() {
         &db::from(&post)
             .filter(post.published.eq(db::val(false)))
             .delete()
-            .plan(Dialect::Postgres)
+            .plan()
             .unwrap(),
         "DELETE FROM posts WHERE (published = $1)",
         BindMeta::new(0, 1, 1),
     );
     assert_plan(
-        &db::from(&post)
-            .batch_insert(&rows)
-            .plan(Dialect::Postgres)
-            .unwrap(),
+        &db::from(&post).batch_insert(&rows).plan().unwrap(),
         "INSERT INTO posts (title, published) VALUES ($1, $2), ($3, $4)",
         BindMeta::new(4, 0, 4),
     );
     assert_plan(
         &db::from(&post)
             .batch_upsert(&rows, [&post.title])
-            .plan(Dialect::Postgres)
+            .plan()
             .unwrap(),
         "INSERT INTO posts (title, published) VALUES ($1, $2), ($3, $4) ON CONFLICT (title) DO UPDATE SET published = EXCLUDED.published",
         BindMeta::new(4, 0, 4),
     );
     assert_plan(
         &db::from(&post)
-            .batch_upsert(&rows, [&post.title])
-            .plan(Dialect::Mysql)
-            .unwrap(),
-        "INSERT INTO posts (title, published) VALUES (?, ?), (?, ?) ON DUPLICATE KEY UPDATE published = VALUES(published)",
-        BindMeta::new(4, 0, 4),
-    );
-    assert_plan(
-        &db::from(&post)
             .returning::<PostSummary>()
             .insert(&patch)
-            .plan(Dialect::Postgres)
+            .plan()
             .unwrap(),
         "INSERT INTO posts (title) VALUES ($1) RETURNING id, title",
         BindMeta::new(1, 0, 1),
-    );
-    assert_unsupported(
-        db::from(&post)
-            .returning::<PostSummary>()
-            .insert(&patch)
-            .plan(Dialect::Mysql),
-        "RETURNING",
     );
 }
 
@@ -275,10 +213,7 @@ fn write_golden_queries_cover_mutations_upserts_and_returning() {
 fn source_golden_queries_cover_tables_ctes_subqueries_and_sets() {
     let account = common::Account::table();
     assert_plan(
-        &db::from(&account)
-            .all::<common::Account>()
-            .plan(Dialect::Postgres)
-            .unwrap(),
+        &db::from(&account).all::<common::Account>().plan().unwrap(),
         "SELECT account.id, account.email_address, account.nickname FROM auth.accounts account",
         BindMeta::new(0, 0, 0),
     );
@@ -294,7 +229,7 @@ fn source_golden_queries_cover_tables_ctes_subqueries_and_sets() {
         &db::from(&subquery)
             .filter(cols.id.gt(db::val(10_i64)))
             .all::<PostSummary>()
-            .plan(Dialect::Postgres)
+            .plan()
             .unwrap(),
         "SELECT published_posts.id, published_posts.title FROM (SELECT post.id, post.title FROM posts post WHERE (post.published = $1)) published_posts WHERE (published_posts.id > $2)",
         BindMeta::new(0, 2, 2),
@@ -311,7 +246,7 @@ fn source_golden_queries_cover_tables_ctes_subqueries_and_sets() {
             .with(&cte)
             .filter(cols.id.gt(db::val(10_i64)))
             .all::<PostSummary>()
-            .plan(Dialect::Postgres)
+            .plan()
             .unwrap(),
         "WITH published_posts AS (SELECT post.id, post.title FROM posts post WHERE (post.published = $1)) SELECT published_posts.id, published_posts.title FROM published_posts WHERE (published_posts.id > $2)",
         BindMeta::new(0, 2, 2),
@@ -324,7 +259,7 @@ fn source_golden_queries_cover_tables_ctes_subqueries_and_sets() {
         .filter(post.published.eq(db::val(false)))
         .all::<PostSummary>();
     assert_plan(
-        &left.union_all(right).plan(Dialect::Postgres).unwrap(),
+        &left.union_all(right).plan().unwrap(),
         "SELECT post.id, post.title FROM posts post WHERE (post.published = $1) UNION ALL SELECT post.id, post.title FROM posts post WHERE (post.published = $2)",
         BindMeta::new(0, 2, 2),
     );
@@ -336,10 +271,7 @@ fn relation_golden_queries_cover_joined_records_and_correlated_predicates() {
     let post = Post::table();
 
     assert_plan(
-        &db::from(&post)
-            .all::<PostWithAuthor>()
-            .plan(Dialect::Postgres)
-            .unwrap(),
+        &db::from(&post).all::<PostWithAuthor>().plan().unwrap(),
         "SELECT post.id, post.author_id, post.title, post.published, post.created_at, post.subtitle, author.id, author.email, author.active FROM posts post JOIN users author ON author.id = post.author_id",
         BindMeta::new(0, 0, 0),
     );
@@ -349,7 +281,7 @@ fn relation_golden_queries_cover_joined_records_and_correlated_predicates() {
                 db::backref::<PostComments>(&post).any(|comment| comment.flagged.eq(db::val(true))),
             )
             .all::<Post>()
-            .plan(Dialect::Postgres)
+            .plan()
             .unwrap(),
         "SELECT post.id, post.author_id, post.title, post.published, post.created_at, post.subtitle FROM posts post WHERE EXISTS (SELECT 1 FROM comments comment WHERE comment.post_id = post.id AND (comment.flagged = $1))",
         BindMeta::new(0, 1, 1),
@@ -361,7 +293,7 @@ fn relation_golden_queries_cover_joined_records_and_correlated_predicates() {
                     .any(|tag| tag.name.eq(db::val("rust".to_string()))),
             )
             .all::<Post>()
-            .plan(Dialect::Postgres)
+            .plan()
             .unwrap(),
         "SELECT post.id, post.author_id, post.title, post.published, post.created_at, post.subtitle FROM posts post WHERE EXISTS (SELECT 1 FROM post_tags post_tag JOIN tags tag ON tag.id = post_tag.tag_id WHERE post_tag.post_id = post.id AND (tag.name = $1))",
         BindMeta::new(0, 1, 1),
@@ -374,7 +306,7 @@ fn relation_golden_queries_cover_joined_records_and_correlated_predicates() {
                     .gt(db::val(2_i64)),
             )
             .all::<Post>()
-            .plan(Dialect::Postgres)
+            .plan()
             .unwrap(),
         "SELECT post.id, post.author_id, post.title, post.published, post.created_at, post.subtitle FROM posts post WHERE ((SELECT COUNT(*) FROM comments comment WHERE comment.post_id = post.id) > $1)",
         BindMeta::new(0, 1, 1),
@@ -396,7 +328,7 @@ fn function_golden_queries_cover_builtin_json_and_custom_extensions() {
                     .when(post.published.eq(db::val(true)), post.title.clone())
                     .else_(db::val("draft".to_string())),
             )
-            .plan(Dialect::Postgres)
+            .plan()
             .unwrap(),
         "SELECT post.id AS id, CASE WHEN (post.published = $1) THEN post.title ELSE $2 END AS title FROM posts post",
         BindMeta::new(0, 2, 2),
@@ -406,7 +338,7 @@ fn function_golden_queries_cover_builtin_json_and_custom_extensions() {
     assert_plan(
         &db::from(&json_post)
             .scalar(db::funcs::json::text(json_post.meta.clone(), "status"))
-            .plan(Dialect::Postgres)
+            .plan()
             .unwrap(),
         "SELECT (json_post.meta #>> '{status}') FROM json_posts json_post",
         BindMeta::new(0, 0, 0),
@@ -423,7 +355,7 @@ fn function_golden_queries_cover_builtin_json_and_custom_extensions() {
                     title: post.title.clone(),
                 }),
             )
-            .plan(Dialect::Postgres)
+            .plan()
             .unwrap(),
         "SELECT post.id AS id, LOWER(post.title) AS title FROM posts post WHERE (search_rank(post.title) > $1)",
         BindMeta::new(0, 1, 1),
@@ -442,7 +374,7 @@ fn postgres_array_helper_renders_supported_sql() {
                 db::funcs::array::value(vec!["rust".to_string()]),
             ))
             .all::<common::ArrayPost>()
-            .plan(Dialect::Postgres)
+            .plan()
             .unwrap(),
         "SELECT array_post.id, array_post.tags, array_post.scores FROM array_posts array_post WHERE (array_post.tags @> $1)",
         BindMeta::new(0, 1, 1),
@@ -460,7 +392,7 @@ fn enum_golden_queries_cover_typed_filters_and_schema_metadata() {
     let plan = db::from(&post)
         .filter_with(&filter)
         .all::<EnumPost>()
-        .plan(Dialect::Postgres)
+        .plan()
         .unwrap();
     assert_plan(
         &plan,
@@ -468,7 +400,7 @@ fn enum_golden_queries_cover_typed_filters_and_schema_metadata() {
         BindMeta::new(0, 3, 3),
     );
 
-    let schema = db::schema(db::Dialect::Postgres)
+    let schema = db::schema()
         .model::<EnumPost>()
         .model::<NativeEnumPost>()
         .build()
@@ -479,13 +411,66 @@ fn enum_golden_queries_cover_typed_filters_and_schema_metadata() {
     assert!(schema.enums.contains_key("native_post_status"));
     assert!(enum_posts.constraints.iter().any(|constraint| matches!(
         constraint,
-        db::Constraint::Check { name, expression }
+        db::schema::Constraint::Check { name, expression }
             if name == "ck_enum_posts_status_sql_enum"
                 && expression == "status IN ('draft', 'in_review', 'published')"
     )));
     assert_eq!(
-        MysqlPostStatus::sql_column_type(db::Dialect::Postgres),
+        MysqlPostStatus::sql_column_type(db::gaman::core::Dialect::Postgres),
         "ENUM('draft', 'published')".to_string()
+    );
+}
+
+/// Verifies PostgreSQL `UNNEST` accepts generated enum, native-enum, and JSON column arrays.
+#[test]
+fn postgres_unnest_supports_generated_complex_column_arrays() {
+    let enum_posts = EnumPost::table();
+    let enum_rows = [EnumPost {
+        id: 1,
+        status: PostStatus::Published,
+        priority: PostPriority::High,
+    }];
+    let enum_plan = db::from(&enum_posts)
+        .batch_insert(&enum_rows)
+        .using_unnest()
+        .plan()
+        .unwrap();
+    assert_plan(
+        &enum_plan,
+        "INSERT INTO enum_posts (id, status, priority) SELECT __mool_input.id, __mool_input.status, __mool_input.priority FROM UNNEST($1, $2, $3) AS __mool_input (id, status, priority)",
+        BindMeta::new(3, 0, 3),
+    );
+
+    let native_posts = NativeEnumPost::table();
+    let native_rows = [NativeEnumPost {
+        id: 1,
+        status: common::NativePostStatus::Published,
+    }];
+    assert_eq!(
+        db::from(&native_posts)
+            .batch_insert(&native_rows)
+            .using_unnest()
+            .plan()
+            .unwrap()
+            .total_bind_count,
+        2
+    );
+
+    let json_posts = JsonPost::table();
+    let json_rows = [JsonPost {
+        id: 1,
+        meta: common::PostMeta {
+            status: "published".to_string(),
+        },
+    }];
+    assert_eq!(
+        db::from(&json_posts)
+            .batch_insert(&json_rows)
+            .using_unnest()
+            .plan()
+            .unwrap()
+            .total_bind_count,
+        2
     );
 }
 
@@ -497,25 +482,14 @@ fn raw_sql_golden_queries_cover_named_placeholders_and_bind_errors() {
     let pg = db::query("SELECT * FROM users WHERE id = :id AND email = :email")
         .bind("id", 1_i64)
         .bind("email", "a@example.com".to_string())
-        .to_statement(Dialect::Postgres)
+        .to_statement()
         .unwrap();
     assert_eq!(pg.sql(), "SELECT * FROM users WHERE id = $1 AND email = $2");
     assert_eq!(pg.arguments().len(), 2);
 
-    let mysql = db::query("SELECT * FROM users WHERE id = :id AND email = :email")
-        .bind("id", 1_i64)
-        .bind("email", "a@example.com".to_string())
-        .to_statement(Dialect::Mysql)
-        .unwrap();
-    assert_eq!(
-        mysql.sql(),
-        "SELECT * FROM users WHERE id = ? AND email = ?"
-    );
-    assert_eq!(mysql.arguments().len(), 2);
-
     let repeated = db::query("SELECT * FROM users WHERE id = :id OR manager_id = :id")
         .bind("id", 1_i64)
-        .to_statement(Dialect::Postgres)
+        .to_statement()
         .unwrap();
     assert_eq!(
         repeated.sql(),
@@ -524,7 +498,7 @@ fn raw_sql_golden_queries_cover_named_placeholders_and_bind_errors() {
     assert_eq!(repeated.arguments().len(), 1);
 
     let missing = db::query("SELECT * FROM users WHERE id = :id")
-        .to_statement(Dialect::Postgres)
+        .to_statement()
         .unwrap_err();
     assert!(
         missing
@@ -534,7 +508,7 @@ fn raw_sql_golden_queries_cover_named_placeholders_and_bind_errors() {
 
     let unused = db::query("SELECT * FROM users")
         .bind("id", 1_i64)
-        .to_statement(Dialect::Postgres)
+        .to_statement()
         .unwrap_err();
     assert!(unused.to_string().contains("unused binding: id"));
 }
@@ -552,21 +526,18 @@ fn failure_contracts_reject_invalid_queries_before_execution() {
             .filter(post.id.eq(&bad_name))
             .bind(&bad_name, 1_i64)
             .all::<Post>()
-            .plan(Dialect::Postgres),
+            .plan(),
         "invalid identifier",
     );
     assert_unsupported(
         db::from(&user)
             .filter(post.id.eq(db::val(1_i64)))
             .all::<User>()
-            .plan(Dialect::Postgres),
+            .plan(),
         "column belongs to",
     );
     assert_unsupported(
-        db::from(&post)
-            .filter(post.id.eq(&id))
-            .all::<Post>()
-            .plan(Dialect::Postgres),
+        db::from(&post).filter(post.id.eq(&id)).all::<Post>().plan(),
         "missing binding for id",
     );
     assert_unsupported(
@@ -575,23 +546,23 @@ fn failure_contracts_reject_invalid_queries_before_execution() {
             .bind(&id, 1_i64)
             .bind(&id, 2_i64)
             .all::<Post>()
-            .plan(Dialect::Postgres),
+            .plan(),
         "duplicate binding",
     );
-    assert_unsupported(
-        db::from(&post)
+    assert_plan(
+        &db::from(&post)
             .filter(post.id.in_values(Vec::<i64>::new()))
             .all::<Post>()
-            .plan(Dialect::Postgres),
-        "IN list requires at least one value",
+            .plan()
+            .expect("empty IN has deterministic false semantics"),
+        "SELECT post.id, post.author_id, post.title, post.published, post.created_at, post.subtitle FROM posts post WHERE FALSE",
+        BindMeta::new(0, 0, 0),
     );
 
     let empty_rows: Vec<PostPatch> = Vec::new();
     assert_unsupported(
-        db::from(&post)
-            .batch_insert(&empty_rows)
-            .plan(Dialect::Postgres),
-        "cannot insert empty list",
+        db::from(&post).batch_insert(&empty_rows).plan(),
+        "batch insert requires at least one row",
     );
 
     let cte = db::from(&post)
@@ -603,7 +574,7 @@ fn failure_contracts_reject_invalid_queries_before_execution() {
             .with(&cte)
             .filter(db::val(true).eq(db::val(true)))
             .delete()
-            .plan(Dialect::Postgres),
+            .plan(),
         "CTE 'post_ids' cannot be used as a mutation target",
     );
 }

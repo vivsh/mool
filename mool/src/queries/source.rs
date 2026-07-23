@@ -503,6 +503,102 @@ impl<T> ProjectedColumn<T> {
         self.compare(">=", rhs)
     }
 
+    /// Tests whether this projected column is SQL `NULL`.
+    pub fn is_null(&self) -> Predicate {
+        self.expr().is_null()
+    }
+
+    /// Tests whether this projected column is not SQL `NULL`.
+    pub fn is_not_null(&self) -> Predicate {
+        self.expr().is_not_null()
+    }
+
+    /// Tests whether this projected column is within an inclusive range.
+    pub fn between<L, U>(&self, lower: L, upper: U) -> Predicate
+    where
+        L: IntoExpr<T>,
+        U: IntoExpr<T>,
+    {
+        self.expr().between(lower, upper)
+    }
+
+    /// Tests whether this projected column is outside an inclusive range.
+    pub fn not_between<L, U>(&self, lower: L, upper: U) -> Predicate
+    where
+        L: IntoExpr<T>,
+        U: IntoExpr<T>,
+    {
+        self.expr().not_between(lower, upper)
+    }
+
+    /// SQL `IN (...)` predicate for an explicit value list.
+    pub fn in_values<I>(&self, values: I) -> Predicate
+    where
+        I: IntoIterator<Item = T>,
+        T: Clone
+            + for<'q> sqlx::Encode<'q, crate::commons::Database>
+            + sqlx::Type<crate::commons::Database>
+            + Send
+            + Sync
+            + 'static,
+    {
+        super::expr::in_list(self, values.into_iter().map(super::api::val))
+    }
+
+    /// SQL `NOT IN (...)` predicate for an explicit value list.
+    pub fn not_in_values<I>(&self, values: I) -> Predicate
+    where
+        I: IntoIterator<Item = T>,
+        T: Clone
+            + for<'q> sqlx::Encode<'q, crate::commons::Database>
+            + sqlx::Type<crate::commons::Database>
+            + Send
+            + Sync
+            + 'static,
+    {
+        super::expr::not_in_list(self, values.into_iter().map(super::api::val))
+    }
+
+    /// Adds this projected column to another typed expression.
+    pub fn add<R>(&self, rhs: R) -> Expr<T>
+    where
+        R: IntoExpr<T>,
+    {
+        self.expr().add(rhs)
+    }
+
+    /// Subtracts a typed expression from this projected column.
+    pub fn sub<R>(&self, rhs: R) -> Expr<T>
+    where
+        R: IntoExpr<T>,
+    {
+        self.expr().sub(rhs)
+    }
+
+    /// Multiplies this projected column by a typed expression.
+    pub fn mul<R>(&self, rhs: R) -> Expr<T>
+    where
+        R: IntoExpr<T>,
+    {
+        self.expr().mul(rhs)
+    }
+
+    /// Divides this projected column by a typed expression.
+    pub fn div<R>(&self, rhs: R) -> Expr<T>
+    where
+        R: IntoExpr<T>,
+    {
+        self.expr().div(rhs)
+    }
+
+    /// Computes the remainder after division by a typed expression.
+    pub fn modulo<R>(&self, rhs: R) -> Expr<T>
+    where
+        R: IntoExpr<T>,
+    {
+        self.expr().modulo(rhs)
+    }
+
     /// Ascending order expression.
     pub fn asc(&self) -> OrderExpr {
         self.expr().asc()
@@ -541,12 +637,12 @@ impl ProjectedColumn<String> {
         self.compare("LIKE", rhs)
     }
 
-    /// SQL ILIKE predicate for text source columns.
-    pub fn ilike<R>(&self, rhs: R) -> Predicate
+    #[cfg(feature = "postgres")]
+    pub(crate) fn compare_text<R>(&self, op: &'static str, rhs: R) -> Predicate
     where
         R: IntoExpr<String>,
     {
-        self.compare("ILIKE", rhs)
+        self.compare(op, rhs)
     }
 }
 

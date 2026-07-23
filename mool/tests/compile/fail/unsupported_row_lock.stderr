@@ -1,0 +1,13 @@
+error[E0599]: no method named `for_update` found for struct `QueryScope` in the current scope
+  --> tests/compile/fail/unsupported_row_lock.rs:12:30
+   |
+12 |     let _ = db::from(&posts).for_update();
+   |                              ^^^^^^^^^^
+   |
+help: there is a method `update` with a similar name, but with different arguments
+  --> src/queries/terminals.rs
+   |
+   | /     pub fn update<W>(self, row: W) -> Update<W>
+   | |     where
+   | |         W: WriteInput,
+   | |______________________^

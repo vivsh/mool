@@ -38,6 +38,7 @@ impl Statement {
     }
 
     /// Builds a statement with no arguments.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(sql: &str) -> Self {
         Self {
             sql: sql.to_string(),

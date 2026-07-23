@@ -1,0 +1,160 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-matrix:
+    name: Test ${{ matrix.backend }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [postgres, sqlite, mysql, mariadb]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: mool
+      - uses: actions/checkout@v4
+        with:
+          repository: vivsh/gaman
+          path: gaman
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: mool
+      - name: Test selected backend
+        working-directory: mool
+        run: cargo test -p mool --no-default-features --features "${{ matrix.backend }}"
+      - name: Clippy selected backend
+        working-directory: mool
+        run: cargo clippy -p mool --all-targets --no-deps --no-default-features --features "${{ matrix.backend }}" -- -D warnings
+
+  migrations:
+    name: Migrations ${{ matrix.backend }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        backend: [postgres, sqlite]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: mool
+      - uses: actions/checkout@v4
+        with:
+          repository: vivsh/gaman
+          path: gaman
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: mool
+      - name: Test migration integration
+        working-directory: mool
+        run: cargo test -p mool --no-default-features --features "${{ matrix.backend }} migrations"
+
+  quality:
+    name: Formatting, docs, and feature guards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: mool
+      - uses: actions/checkout@v4
+        with:
+          repository: vivsh/gaman
+          path: gaman
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: mool
+      - name: Formatting
+        working-directory: mool
+        run: cargo fmt --all --check
+      - name: Reject missing backend
+        working-directory: mool
+        run: >-
+          ! cargo check -p mool --no-default-features
+      - name: Reject multiple backends
+        working-directory: mool
+        run: >-
+          ! cargo check -p mool --no-default-features --features "postgres sqlite"
+      - name: Rustdoc warnings
+        working-directory: mool
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc -p mool --no-deps --no-default-features --features "sqlite migrations"
+      - name: Optional tracing surface
+        working-directory: mool
+        run: cargo check -p mool --no-default-features --features "postgres tracing"
+      - name: Package macro crates
+        working-directory: mool
+        run: cargo package -p mool-macros-impl && cargo package -p mool-macros
+
+  live-smoke:
+    name: Live SQLx smoke
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mool_tests
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: mool_tests
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -proot"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: mool_tests
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: mool
+      - uses: actions/checkout@v4
+        with:
+          repository: vivsh/gaman
+          path: gaman
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: mool
+      - name: Run live CRUD and transaction tests
+        working-directory: mool
+        env:
+          POSTGRES_DATABASE_URL: postgres://postgres:postgres@localhost:5432/mool_tests
+          MYSQL_DATABASE_URL: mysql://root:root@localhost:3306/mool_tests
+          MARIADB_DATABASE_URL: mysql://root:root@localhost:3307/mool_tests
+        run: scripts/integration-tests.sh all all

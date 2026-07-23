@@ -10,23 +10,31 @@ use crate::QueryError;
 
 mod common;
 mod features;
+#[cfg(feature = "mariadb")]
+mod mariadb;
+#[cfg(feature = "mysql")]
 mod mysql;
+#[cfg(feature = "postgres")]
 mod postgres;
+#[cfg(feature = "sqlite")]
 mod sqlite;
 
 pub(super) use features::DialectFeature;
 
+#[cfg(feature = "postgres")]
 static POSTGRES: postgres::PostgresSpec = postgres::PostgresSpec;
+#[cfg(feature = "sqlite")]
 static SQLITE: sqlite::SqliteSpec = sqlite::SqliteSpec;
+#[cfg(feature = "mysql")]
 static MYSQL: mysql::MysqlSpec = mysql::MysqlSpec;
+#[cfg(feature = "mariadb")]
+static MARIADB: mariadb::MariadbSpec = mariadb::MariadbSpec;
 
 /// Internal dialect renderer used by the typed-query planner.
 ///
 /// Common SQL is rendered by the shared renderer. This trait owns only syntax
 /// and feature points that genuinely differ between supported backends.
 pub(super) trait DialectRenderer: Send + Sync {
-    fn dialect(&self) -> Dialect;
-
     fn placeholder(&self, position: usize) -> String;
 
     fn validate_feature(&self, feature: DialectFeature) -> Result<(), QueryError>;
@@ -36,6 +44,9 @@ pub(super) trait DialectRenderer: Send + Sync {
         conflict: &[ColumnRef],
         update_columns: &[&str],
     ) -> Result<String, QueryError>;
+
+    #[cfg(any(feature = "postgres", feature = "sqlite"))]
+    fn render_ignore_conflicts(&self, conflict: &[ColumnRef]) -> Result<String, QueryError>;
 
     fn render_returning(&self, columns: &[String]) -> Result<String, QueryError> {
         self.validate_feature(DialectFeature::Returning)?;
@@ -54,11 +65,28 @@ pub(super) trait DialectRenderer: Send + Sync {
 }
 
 pub(super) fn renderer(dialect: Dialect) -> &'static dyn DialectRenderer {
-    match dialect {
-        Dialect::Postgres => &POSTGRES,
-        Dialect::Sqlite => &SQLITE,
-        Dialect::Mysql => &MYSQL,
-    }
+    debug_assert_eq!(dialect, Dialect::active());
+    active_renderer()
+}
+
+#[cfg(feature = "postgres")]
+fn active_renderer() -> &'static dyn DialectRenderer {
+    &POSTGRES
+}
+
+#[cfg(feature = "sqlite")]
+fn active_renderer() -> &'static dyn DialectRenderer {
+    &SQLITE
+}
+
+#[cfg(feature = "mysql")]
+fn active_renderer() -> &'static dyn DialectRenderer {
+    &MYSQL
+}
+
+#[cfg(feature = "mariadb")]
+fn active_renderer() -> &'static dyn DialectRenderer {
+    &MARIADB
 }
 
 pub(super) fn validate_feature(

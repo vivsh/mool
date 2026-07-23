@@ -107,7 +107,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::ArgValue;
-    use crate::Arguments;
+    use crate::backend::Arguments;
 
     /// Verifies inline primitive and string bind values increment SQLx arguments.
     #[test]

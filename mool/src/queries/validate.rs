@@ -233,8 +233,15 @@ pub(super) fn validate_expr_owners(
             validate_expr_owners(left, source, references, root_alias, allow_references)?;
             validate_expr_owners(right, source, references, root_alias, allow_references)
         }
-        ExprNode::Unary { expr, .. } => {
+        ExprNode::Unary { expr, .. } | ExprNode::NullCheck { expr, .. } => {
             validate_expr_owners(expr, source, references, root_alias, allow_references)
+        }
+        ExprNode::Between {
+            expr, lower, upper, ..
+        } => {
+            validate_expr_owners(expr, source, references, root_alias, allow_references)?;
+            validate_expr_owners(lower, source, references, root_alias, allow_references)?;
+            validate_expr_owners(upper, source, references, root_alias, allow_references)
         }
         ExprNode::Function { args, .. } | ExprNode::Custom { args, .. } => {
             for arg in args {
@@ -250,12 +257,7 @@ pub(super) fn validate_expr_owners(
             validate_expr_owners(left, source, references, root_alias, allow_references)?;
             validate_source_column(rhs)
         }
-        ExprNode::InList { left, values } => {
-            if values.is_empty() {
-                return Err(QueryError::BindError(
-                    "IN list requires at least one value".to_string(),
-                ));
-            }
+        ExprNode::InList { left, values, .. } => {
             validate_expr_owners(left, source, references, root_alias, allow_references)?;
             for value in values {
                 validate_expr_owners(value, source, references, root_alias, allow_references)?;
@@ -274,14 +276,17 @@ pub(super) fn contains_window(node: &ExprNode) -> bool {
         ExprNode::Binary { left, right, .. } | ExprNode::Bool { left, right, .. } => {
             contains_window(left) || contains_window(right)
         }
-        ExprNode::Unary { expr, .. } => contains_window(expr),
+        ExprNode::Unary { expr, .. } | ExprNode::NullCheck { expr, .. } => contains_window(expr),
+        ExprNode::Between {
+            expr, lower, upper, ..
+        } => contains_window(expr) || contains_window(lower) || contains_window(upper),
         ExprNode::Function { args, .. } | ExprNode::Custom { args, .. } => {
             args.iter().any(contains_window)
         }
         ExprNode::InSource { left, source } => {
             contains_window(left) || source_contains_window(&source.source)
         }
-        ExprNode::InList { left, values } => {
+        ExprNode::InList { left, values, .. } => {
             contains_window(left) || values.iter().any(contains_window)
         }
         ExprNode::RelationExists { predicate, .. } => match predicate {

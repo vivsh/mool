@@ -1,0 +1,20 @@
+error[E0599]: the method `plan` exists for struct `PgUnnestBatchInsert<'_, MatrixRow>`, but its trait bounds were not satisfied
+  --> tests/compile/fail/unnest_nested_array.rs:21:10
+   |
+18 |       let _ = db::from(&table)
+   |  _____________-
+19 | |         .batch_insert(&rows)
+20 | |         .using_unnest()
+21 | |         .plan();
+   | |         -^^^^ method cannot be called on `PgUnnestBatchInsert<'_, MatrixRow>` due to unsatisfied trait bounds
+   | |_________|
+   |
+   |
+  ::: $RUST/alloc/src/vec/mod.rs
+   |
+   |   pub struct Vec<T, #[unstable(feature = "allocator_api", issue = "32838")] A: Allocator = Global> {
+   |   ------------------------------------------------------------------------------------------------ doesn't satisfy `Vec<i64>: PgHasArrayType`
+   |
+   = note: the following trait bounds were not satisfied:
+           `Vec<i64>: PgHasArrayType`
+           which is required by `(Vec<i64>, Vec<Vec<i64>>): PgBatchColumns`

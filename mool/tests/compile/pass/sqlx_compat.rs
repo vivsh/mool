@@ -65,9 +65,9 @@ struct CompatRow {
 fn assert_sqlx_value<T>()
 where
     T: Clone
-        + for<'q> sqlx::Encode<'q, db::Database>
-        + for<'r> sqlx::Decode<'r, db::Database>
-        + sqlx::Type<db::Database>
+        + for<'q> sqlx::Encode<'q, db::backend::Database>
+        + for<'r> sqlx::Decode<'r, db::backend::Database>
+        + sqlx::Type<db::backend::Database>
         + Send
         + Sync
         + Unpin
@@ -78,14 +78,7 @@ where
 #[cfg(feature = "postgres")]
 fn assert_postgres_array<T>()
 where
-    T: Clone
-        + for<'q> sqlx::Encode<'q, db::Database>
-        + for<'r> sqlx::Decode<'r, db::Database>
-        + sqlx::Type<db::Database>
-        + Send
-        + Sync
-        + Unpin
-        + 'static,
+    T: sqlx::postgres::PgHasArrayType,
 {
 }
 
@@ -100,12 +93,14 @@ fn main() {
         .filter(rows.text_status.eq(db::val(TextStatus::Published)))
         .filter(rows.int_status.eq(db::val(IntStatus::Draft)))
         .all::<CompatRow>()
-        .plan(db::queries::Dialect::Postgres)
+        .plan()
         .unwrap();
 
     #[cfg(feature = "postgres")]
     {
-        assert_postgres_array::<Vec<String>>();
-        assert_postgres_array::<Option<Vec<i64>>>();
+        assert_postgres_array::<TextStatus>();
+        assert_postgres_array::<IntStatus>();
+        assert_postgres_array::<NativePostgresStatus>();
+        assert_postgres_array::<NativeMysqlStatus>();
     }
 }

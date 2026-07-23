@@ -2,8 +2,6 @@
 
 use std::borrow::Cow;
 
-use crate::placeholders::Dialect;
-
 use super::super::expr::{Expr, IntoExpr, Predicate};
 use super::super::extension::{
     DbExpression, DbFunction, ExprRenderCtx, FunctionArgs, custom, func,
@@ -184,11 +182,11 @@ impl WindowFn {
 }
 
 impl<T> DbFunction<T> for WindowFn {
-    fn name(&self, _dialect: Dialect) -> Result<Cow<'static, str>, QueryError> {
+    fn name(&self) -> Result<Cow<'static, str>, QueryError> {
         Ok(Cow::Borrowed(self.name))
     }
 
-    fn validate(&self, _dialect: Dialect, arity: usize) -> Result<(), QueryError> {
+    fn validate(&self, arity: usize) -> Result<(), QueryError> {
         if (self.min_arity..=self.max_arity).contains(&arity) {
             return Ok(());
         }

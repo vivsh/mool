@@ -1,7 +1,7 @@
 use std::hash::Hash;
 use std::marker::PhantomData;
 
-use crate::Row;
+use crate::backend::{Arguments, Row};
 use crate::relations::ReferenceMeta;
 
 /// Fluent metadata descriptor for a [`Record`].
@@ -158,7 +158,7 @@ pub trait Record: Sized {
     }
 
     /// Bind this record's writable values into SQL arguments.
-    fn record_bind_values(&self, _args: &mut crate::Arguments<'static>) -> Result<(), sqlx::Error> {
+    fn record_bind_values(&self, _args: &mut Arguments<'static>) -> Result<(), sqlx::Error> {
         Ok(())
     }
 
@@ -170,7 +170,7 @@ pub trait Record: Sized {
     fn record_bind_selected(
         &self,
         columns: &[&str],
-        args: &mut crate::Arguments<'static>,
+        args: &mut Arguments<'static>,
     ) -> Result<(), sqlx::Error> {
         let expected = Self::record_bind_column_names();
         if columns.len() != expected.len() {
@@ -207,8 +207,21 @@ pub trait Record: Sized {
     }
 }
 
+/// Columnar representation generated for efficient backend batch strategies.
+///
+/// Derived records transpose writable fields into typed vectors without
+/// referring to a database backend. Manual records may implement this trait to
+/// opt into strategies such as PostgreSQL `UNNEST`.
+pub trait BatchRecord: Record {
+    /// Nested tuple of writable column vectors in record bind order.
+    type BatchColumns;
+
+    /// Transposes row-oriented values into writable column vectors.
+    fn batch_columns(rows: &[Self]) -> Result<Self::BatchColumns, sqlx::Error>;
+}
+
 /// Table-backed database record with schema and primary-key metadata.
-pub trait Model: Record + crate::IntoTable {
+pub trait Model: Record + crate::schema::IntoTable {
     type PrimaryKey: Clone + Hash + Eq;
 
     /// Fluent model metadata descriptor.

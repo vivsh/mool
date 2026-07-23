@@ -27,10 +27,7 @@ fn main() -> Result<(), db::QueryError> {
         q: Some("%mool%".to_string()),
         ids: vec![1, 2],
     };
-    let plan = db::from(&posts)
-        .filter_with(&filter)
-        .all::<Post>()
-        .plan(db::queries::Dialect::Postgres)?;
+    let plan = db::from(&posts).filter_with(&filter).all::<Post>().plan()?;
 
     assert!(plan.sql.contains("ILIKE"));
     assert_eq!(plan.total_bind_count, 4);

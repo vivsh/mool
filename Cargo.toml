@@ -8,6 +8,7 @@ resolver = "3"
 
 [workspace.package]
 edition = "2024"
+rust-version = "1.88"
 license = "MIT"
 repository = "https://github.com/vivsh/mool"
 documentation = "https://docs.rs/mool"
@@ -15,7 +16,7 @@ documentation = "https://docs.rs/mool"
 [workspace.dependencies]
 chrono = { version = "0.4.41", features = ["serde"] }
 darling = "0.20"
-gaman = { version = "0.3.22", default-features = false, features = ["native"] }
+gaman = { version = "0.3.22", path = "../gaman", default-features = false, features = ["native"] }
 heck = "0.4"
 indexmap = { version = "2.10.0", features = ["serde"] }
 proc-macro2 = "1"
@@ -23,7 +24,7 @@ quote = "1"
 schemars = "1.0.4"
 serde = { version = "1.0.219", features = ["derive", "rc", "serde_derive"] }
 serde_json = { version = "1.0.140", features = ["indexmap", "raw_value", "preserve_order"] }
-sqlx = { version = "^0.8.6", features = ["chrono", "postgres", "sqlite", "runtime-tokio", "uuid", "json"] }
+sqlx = { version = "^0.8.6", default-features = false, features = ["chrono", "runtime-tokio", "uuid", "json", "derive"] }
 syn = { version = "2", features = ["full"] }
 thiserror = "2.0.12"
 tokio = { version = "1.46.1", features = ["full"] }

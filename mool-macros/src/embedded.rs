@@ -37,7 +37,7 @@ pub(crate) fn embedded_migrations(
     let dir_lit = LitStr::new(&embedded_dir.to_string_lossy(), Span::call_site());
 
     quote! {
-        #runtime_path::EmbeddedMigrations {
+        #runtime_path::migrations::EmbeddedMigrations {
             files: &[#(#pairs),*],
             dir: #dir_lit,
             children: &[],

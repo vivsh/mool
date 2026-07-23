@@ -1,15 +1,17 @@
 //! Synchronous typed-query terminal builders.
 use std::marker::PhantomData;
 
-use crate::interfaces::Record;
+use crate::interfaces::{Model, Record};
 
+use super::ColumnSet;
+use super::batch::{BatchPolicy, InsertConflict};
 use super::executables::{
-    All, BatchInsert, BatchUpsert, Count, Delete, Exists, First, Insert, One, ReturningBatchInsert,
-    ReturningBatchUpsert, ReturningDelete, ReturningInsert, ReturningUpdate, Scalar, Slice, Update,
+    All, BatchInsert, BatchUpdate, BatchUpsert, Count, Delete, Exists, First, Insert, One,
+    ReturningBatchInsert, ReturningBatchUpdate, ReturningBatchUpsert, ReturningDelete,
+    ReturningInsert, ReturningUpdate, Scalar, Slice, Update,
 };
 use super::expr::IntoExpr;
 use super::scope::{QueryScope, ReturningScope};
-use super::traits::IntoColumnRef;
 use super::values::{NoRecord, WriteInput, WriteUsing, WriteValues};
 
 impl QueryScope {
@@ -128,24 +130,41 @@ impl QueryScope {
     where
         T: Record,
     {
-        BatchInsert { scope: self, rows }
+        BatchInsert {
+            scope: self,
+            rows,
+            policy: BatchPolicy::default(),
+            conflict: InsertConflict::None,
+        }
     }
 
     /// Builds an executable that upserts multiple records.
-    pub fn batch_upsert<T, I, C>(self, rows: &[T], conflict: I) -> BatchUpsert<'_, T>
+    pub fn batch_upsert<T, C>(self, rows: &[T], conflict: C) -> BatchUpsert<'_, T>
     where
         T: Record,
-        I: IntoIterator<Item = C>,
-        C: IntoColumnRef,
+        C: ColumnSet,
     {
-        let conflict = conflict
-            .into_iter()
-            .map(IntoColumnRef::into_column_ref)
-            .collect();
+        let conflict = conflict.into_column_refs();
         BatchUpsert {
             scope: self,
             rows,
             conflict,
+            update_columns: None,
+            policy: BatchPolicy::default(),
+        }
+    }
+
+    /// Builds an executable that updates multiple models by primary key.
+    pub fn batch_update<T, C>(self, rows: &[T], columns: C) -> BatchUpdate<'_, T>
+    where
+        T: Model,
+        C: ColumnSet,
+    {
+        BatchUpdate {
+            scope: self,
+            rows,
+            update_columns: columns.into_column_refs(),
+            policy: BatchPolicy::default(),
         }
     }
 }
@@ -213,24 +232,38 @@ where
         ReturningBatchInsert {
             returning: self,
             rows,
+            policy: BatchPolicy::default(),
+            conflict: InsertConflict::None,
         }
     }
 
     /// Builds a returning batch upsert executable.
-    pub fn batch_upsert<T, I, C>(self, rows: &[T], conflict: I) -> ReturningBatchUpsert<'_, R, T>
+    pub fn batch_upsert<T, C>(self, rows: &[T], conflict: C) -> ReturningBatchUpsert<'_, R, T>
     where
         T: Record,
-        I: IntoIterator<Item = C>,
-        C: IntoColumnRef,
+        C: ColumnSet,
     {
-        let conflict = conflict
-            .into_iter()
-            .map(IntoColumnRef::into_column_ref)
-            .collect();
+        let conflict = conflict.into_column_refs();
         ReturningBatchUpsert {
             returning: self,
             rows,
             conflict,
+            update_columns: None,
+            policy: BatchPolicy::default(),
+        }
+    }
+
+    /// Builds a returning multi-row update executable.
+    pub fn batch_update<T, C>(self, rows: &[T], columns: C) -> ReturningBatchUpdate<'_, R, T>
+    where
+        T: Model,
+        C: ColumnSet,
+    {
+        ReturningBatchUpdate {
+            returning: self,
+            rows,
+            update_columns: columns.into_column_refs(),
+            policy: BatchPolicy::default(),
         }
     }
 }

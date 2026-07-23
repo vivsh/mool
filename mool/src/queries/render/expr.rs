@@ -32,6 +32,23 @@ impl Renderer {
             ExprNode::Value(value) => self.render_value(value),
             ExprNode::Binary { left, op, right } => self.render_binary(left, op, right, mode),
             ExprNode::Unary { op, expr } => Ok(format!("{op} ({})", self.render_expr(expr, mode)?)),
+            ExprNode::NullCheck { expr, negated } => Ok(format!(
+                "({} IS {}NULL)",
+                self.render_expr(expr, mode)?,
+                if *negated { "NOT " } else { "" }
+            )),
+            ExprNode::Between {
+                expr,
+                lower,
+                upper,
+                negated,
+            } => Ok(format!(
+                "({} {}BETWEEN {} AND {})",
+                self.render_expr(expr, mode)?,
+                if *negated { "NOT " } else { "" },
+                self.render_expr(lower, mode)?,
+                self.render_expr(upper, mode)?
+            )),
             ExprNode::Bool { left, op, right } => Ok(format!(
                 "({} {} {})",
                 self.render_expr(left, mode)?,
@@ -64,14 +81,22 @@ impl Renderer {
                 self.render_expr(left, mode)?,
                 self.render_source_column_query(source)?
             )),
-            ExprNode::InList { left, values } => {
+            ExprNode::InList {
+                left,
+                values,
+                negated,
+            } => {
+                if values.is_empty() {
+                    return Ok(if *negated { "TRUE" } else { "FALSE" }.to_string());
+                }
                 let rendered = values
                     .iter()
                     .map(|value| self.render_expr(value, mode))
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(format!(
-                    "{} IN ({})",
+                    "{} {}IN ({})",
                     self.render_expr(left, mode)?,
+                    if *negated { "NOT " } else { "" },
                     rendered.join(", ")
                 ))
             }

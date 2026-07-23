@@ -2,13 +2,13 @@
 use mool as db;
 
 #[cfg(any(debug_assertions, feature = "mock"))]
-use db::DBSession;
+use db::DbSession;
 
 #[cfg(any(debug_assertions, feature = "mock"))]
 #[tokio::main]
 async fn main() -> Result<(), db::DbError> {
-    let mut session = db::mock::MockDBSession::new();
-    session.plan_execute_ok("INSERT", 1);
+    let mut session = db::mock::MockDbSession::new();
+    session.plan_execute_ok("INSERT INTO posts (title) VALUES (?)", 1);
 
     let rows = session
         .execute(db::Statement::from_str(
