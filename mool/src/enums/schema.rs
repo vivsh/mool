@@ -1,24 +1,25 @@
 //! Schema helpers for SQL enum mappings.
 
 use crate::Model;
-use crate::schema::{FunctionDef, IntoTable, Schema, SchemaBuilder, SchemaLoadError};
+use crate::schema::{FunctionDef, IntoTable, Schema, SchemaLoadError};
 use gaman::core::Dialect;
+use gaman::schema::SchemaBuilder as GamanSchemaBuilder;
 
 use super::{SqlEnum, SqlEnumStorage};
 
 /// Function pointer used by generated model metadata to register enum types.
 #[derive(Clone, Copy)]
 pub struct SqlEnumRegistration {
-    register: fn(SqlSchemaBuilder) -> SqlSchemaBuilder,
+    register: fn(SchemaBuilder) -> SchemaBuilder,
 }
 
 impl SqlEnumRegistration {
     /// Creates a registration callback for one SQL enum type.
-    pub const fn new(register: fn(SqlSchemaBuilder) -> SqlSchemaBuilder) -> Self {
+    pub const fn new(register: fn(SchemaBuilder) -> SchemaBuilder) -> Self {
         Self { register }
     }
 
-    fn apply(self, builder: SqlSchemaBuilder) -> SqlSchemaBuilder {
+    fn apply(self, builder: SchemaBuilder) -> SchemaBuilder {
         (self.register)(builder)
     }
 }
@@ -30,29 +31,29 @@ pub trait SqlEnumSchema {
 }
 
 /// Creates an enum-aware schema builder for the selected backend.
-pub fn schema() -> SqlSchemaBuilder {
-    SqlSchemaBuilder::new()
+pub fn schema() -> SchemaBuilder {
+    SchemaBuilder::new()
 }
 
 /// Enum-aware wrapper around Gaman schema building.
-pub struct SqlSchemaBuilder {
+pub struct SchemaBuilder {
     dialect: Dialect,
-    inner: SchemaBuilder,
+    inner: GamanSchemaBuilder,
 }
 
-impl Default for SqlSchemaBuilder {
+impl Default for SchemaBuilder {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl SqlSchemaBuilder {
+impl SchemaBuilder {
     /// Creates a schema builder for the selected backend.
     pub fn new() -> Self {
         let dialect = crate::backend::gaman_dialect();
         Self {
             dialect,
-            inner: SchemaBuilder::new(dialect),
+            inner: GamanSchemaBuilder::new(dialect),
         }
     }
 
@@ -118,7 +119,7 @@ impl SqlSchemaBuilder {
 }
 
 /// Registers one enum type with an enum-aware schema builder.
-pub fn register_enum<E>(builder: SqlSchemaBuilder) -> SqlSchemaBuilder
+pub fn register_enum<E>(builder: SchemaBuilder) -> SchemaBuilder
 where
     E: SqlEnum,
 {

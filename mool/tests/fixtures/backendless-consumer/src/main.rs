@@ -18,7 +18,7 @@ async fn opens_a_disabled_pool() {
 }
 
 fn desired_schema() -> Result<db::schema::Schema, db::schema::SchemaLoadError> {
-    db::schema::SchemaBuilder::new(db::migrations::Dialect::Sqlite).build()
+    Ok(db::schema::Schema::default())
 }
 
 fn main() {

@@ -50,9 +50,9 @@ pub mod mock;
 pub use argvalue::ArgValue;
 #[cfg(not(mool_has_backend))]
 pub use backendless::{DbConf, DbError, DbOperation, DbPool, IntegrityKind, QueryError};
-pub use enums::{SqlEnum, SqlEnumError, SqlEnumStorage};
 #[cfg(mool_has_backend)]
-pub use enums::{SqlSchemaBuilder, schema};
+pub use enums::{SchemaBuilder, schema};
+pub use enums::{SqlEnum, SqlEnumError, SqlEnumStorage};
 #[cfg(mool_has_backend)]
 pub use executor::*;
 #[cfg(mool_has_backend)]

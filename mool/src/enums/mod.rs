@@ -9,7 +9,7 @@ mod traits;
 
 pub use error::SqlEnumError;
 #[cfg(mool_has_backend)]
-pub use schema::{SqlEnumRegistration, SqlEnumSchema, SqlSchemaBuilder, schema};
+pub use schema::{SchemaBuilder, SqlEnumRegistration, SqlEnumSchema, schema};
 pub use storage::SqlEnumStorage;
 pub use traits::SqlEnum;
 

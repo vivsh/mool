@@ -599,6 +599,7 @@ impl DbPool {
     }
 
     /// Closes every connection held by this pool before external resource cleanup.
+    #[cfg(feature = "test-support")]
     pub(crate) async fn close(&self) {
         self.pool.close().await;
     }

@@ -21,7 +21,7 @@ pub use gaman::schema::{
     Column, ColumnDesc, ColumnRef, ColumnType, Constraint, FunctionDef, Index, IntoTable,
     SchemaLoadError, Table,
 };
-pub use gaman::schema::{Schema, SchemaBuilder, TableBuilder};
+pub use gaman::schema::{Schema, TableBuilder};
 #[cfg(feature = "migrations")]
 pub use mool_macros::embedded_migrations;
 

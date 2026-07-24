@@ -100,7 +100,8 @@ fn record_derive_exposes_flattened_reference_metadata() {
 #[cfg(any(feature = "postgres", feature = "sqlite"))]
 #[test]
 fn schema_builder_collects_model_tables() {
-    let schema = db::schema()
+    let builder: db::SchemaBuilder = db::schema();
+    let schema = builder
         .model::<User>()
         .model::<Post>()
         .build()
