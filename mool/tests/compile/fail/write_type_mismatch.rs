@@ -8,6 +8,8 @@ struct Post {
 
 fn main() {
     let posts = Post::table();
+    let patch = Post { id: 1 };
     let _ = db::from(&posts)
-        .update_using(|write| write.set(&posts.id, db::val("wrong".to_string())));
+        .update(&patch)
+        .set(&posts.id, db::val("wrong".to_string()));
 }

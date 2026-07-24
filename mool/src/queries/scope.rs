@@ -14,7 +14,7 @@ use super::batch::BatchInsertMode;
 use super::binds::validate_output_assignments;
 use super::expr::{ExprNode, IntoExpr, OrderExpr, Predicate};
 use super::handles::{Var, VarId};
-use super::output::{IntoOutputTarget, ReturningUsing, SelectAssignment, select_assignment};
+use super::output::{IntoOutputTarget, SelectAssignment, select_assignment};
 use super::plan::QueryPlan;
 use super::render::SelectModel;
 use super::source::{Cte, CteData, CteSource, Source, Subquery, SubqueryData, SubquerySource};
@@ -186,29 +186,25 @@ impl QueryScope {
         self
     }
 
-    pub(super) fn cte<T>(self) -> Result<Cte<T>, QueryError>
+    pub(super) fn cte<T>(self) -> Cte<T>
     where
         T: Record + Projectable + 'static,
     {
         self.cte_as::<T>(&generated_source_name::<T>("cte"))
     }
 
-    pub(super) fn cte_as<T>(self, name: &str) -> Result<Cte<T>, QueryError>
+    pub(super) fn cte_as<T>(self, name: &str) -> Cte<T>
     where
         T: Record + Projectable + 'static,
     {
         self.cte_as_slice::<T>(name, None)
     }
 
-    pub(super) fn cte_as_slice<T>(
-        self,
-        name: &str,
-        slice: Option<(usize, usize)>,
-    ) -> Result<Cte<T>, QueryError>
+    pub(super) fn cte_as_slice<T>(mut self, name: &str, slice: Option<(usize, usize)>) -> Cte<T>
     where
         T: Record + Projectable + 'static,
     {
-        let source = self.select_source::<T>(name, slice)?;
+        let source = self.compose_select_source::<T>(name, slice);
         let data = Arc::new(CteData {
             name: Arc::from(name),
             scope: self,
@@ -220,21 +216,21 @@ impl QueryScope {
         let columns = T::projected_columns(super::source::ProjectionSource::new(Source::Cte(
             cte_source,
         )));
-        Ok(Cte {
+        Cte {
             data,
             columns,
             _marker: PhantomData,
-        })
+        }
     }
 
-    pub(super) fn subquery<T>(self) -> Result<Subquery<T>, QueryError>
+    pub(super) fn subquery<T>(self) -> Subquery<T>
     where
         T: Record + Projectable + 'static,
     {
         self.subquery_as::<T>(&generated_source_name::<T>("subquery"))
     }
 
-    pub(super) fn subquery_as<T>(self, name: &str) -> Result<Subquery<T>, QueryError>
+    pub(super) fn subquery_as<T>(self, name: &str) -> Subquery<T>
     where
         T: Record + Projectable + 'static,
     {
@@ -242,14 +238,14 @@ impl QueryScope {
     }
 
     pub(super) fn subquery_as_slice<T>(
-        self,
+        mut self,
         name: &str,
         slice: Option<(usize, usize)>,
-    ) -> Result<Subquery<T>, QueryError>
+    ) -> Subquery<T>
     where
         T: Record + Projectable + 'static,
     {
-        let source = self.select_source::<T>(name, slice)?;
+        let source = self.compose_select_source::<T>(name, slice);
         let data = Arc::new(SubqueryData {
             name: Arc::from(name),
             scope: self,
@@ -261,11 +257,11 @@ impl QueryScope {
         let columns = T::projected_columns(super::source::ProjectionSource::new(Source::Subquery(
             subquery_source,
         )));
-        Ok(Subquery {
+        Subquery {
             data,
             columns,
             _marker: PhantomData,
-        })
+        }
     }
 
     #[cfg(any(feature = "postgres", feature = "sqlite"))]
@@ -308,17 +304,6 @@ where
         self
     }
 
-    /// Adds computed expressions to the `RETURNING` projection.
-    #[doc(hidden)]
-    pub fn using<F>(mut self, f: F) -> Self
-    where
-        R: super::output::HasOutputCols,
-        F: FnOnce(ReturningUsing<R>) -> ReturningUsing<R>,
-    {
-        self.scope.output_assignments = f(ReturningUsing::new()).into_selects().assignments;
-        self
-    }
-
     pub(super) fn plan_insert<W>(
         &self,
         row: &W,
@@ -331,6 +316,18 @@ where
         self.scope.plan_insert_returning(row, dialect, &model)
     }
 
+    pub(super) fn plan_insert_shape<W>(
+        &self,
+        row: &W,
+        dialect: Dialect,
+    ) -> Result<QueryPlan, QueryError>
+    where
+        W: WriteInput,
+    {
+        let model = self.model(dialect)?;
+        self.scope.plan_insert_returning_shape(row, dialect, &model)
+    }
+
     pub(super) fn plan_update<W>(
         &self,
         row: &W,
@@ -341,6 +338,18 @@ where
     {
         let model = self.model(dialect)?;
         self.scope.plan_update_returning(row, dialect, &model)
+    }
+
+    pub(super) fn plan_update_shape<W>(
+        &self,
+        row: &W,
+        dialect: Dialect,
+    ) -> Result<QueryPlan, QueryError>
+    where
+        W: WriteInput,
+    {
+        let model = self.model(dialect)?;
+        self.scope.plan_update_returning_shape(row, dialect, &model)
     }
 
     pub(super) fn plan_delete(&self, dialect: Dialect) -> Result<QueryPlan, QueryError> {
@@ -362,6 +371,20 @@ where
             .plan_batch_insert_mode_with_args(rows, dialect, mode, Some(&model))
     }
 
+    pub(super) fn plan_batch_insert_shape<T>(
+        &self,
+        row_count: usize,
+        mode: &BatchInsertMode,
+        dialect: Dialect,
+    ) -> Result<QueryPlan, QueryError>
+    where
+        T: Record + 'static,
+    {
+        let model = self.model(dialect)?;
+        self.scope
+            .plan_batch_insert_mode::<T>(row_count, dialect, mode, Some(&model))
+    }
+
     pub(super) fn plan_batch_update<T>(
         &self,
         rows: &[T],
@@ -374,6 +397,20 @@ where
         let model = self.model(dialect)?;
         self.scope
             .plan_batch_update_with_args(rows, update_columns, dialect, Some(&model))
+    }
+
+    pub(super) fn plan_batch_update_shape<T>(
+        &self,
+        rows: &[T],
+        update_columns: &[super::expr::ColumnRef],
+        dialect: Dialect,
+    ) -> Result<QueryPlan, QueryError>
+    where
+        T: Model + 'static,
+    {
+        let model = self.model(dialect)?;
+        self.scope
+            .plan_batch_update(rows, update_columns, dialect, Some(&model))
     }
 
     #[cfg(feature = "postgres")]
@@ -390,5 +427,21 @@ where
         let model = self.model(dialect)?;
         self.scope
             .plan_batch_unnest_with_args(rows, dialect, mode, Some(&model))
+    }
+
+    #[cfg(feature = "postgres")]
+    pub(super) fn plan_batch_unnest_shape<T>(
+        &self,
+        row_count: usize,
+        mode: &BatchInsertMode,
+        dialect: Dialect,
+    ) -> Result<QueryPlan, QueryError>
+    where
+        T: crate::BatchRecord + 'static,
+        T::BatchColumns: crate::backend::PgBatchColumns,
+    {
+        let model = self.model(dialect)?;
+        self.scope
+            .plan_batch_unnest::<T>(row_count, dialect, mode, Some(&model))
     }
 }

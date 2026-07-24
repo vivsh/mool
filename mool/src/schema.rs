@@ -8,4 +8,5 @@ pub use gaman::schema::{
     TriggerEvent, TriggerInput, TriggerScope, TriggerTiming, ViewDef, ViewInput, Volatility,
 };
 
+#[cfg(mool_has_backend)]
 pub use crate::enums::{SqlSchemaBuilder, schema};

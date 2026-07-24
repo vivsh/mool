@@ -107,8 +107,10 @@ impl Renderer {
         match source {
             Source::Table(table) => {
                 sql.push_str(&self.render_table_name(table)?);
-                sql.push(' ');
-                sql.push_str(alias);
+                if alias != table.data.name.as_ref() {
+                    sql.push(' ');
+                    sql.push_str(alias);
+                }
             }
             Source::Cte(cte) => sql.push_str(&cte.data.name),
             Source::Subquery(subquery) => {

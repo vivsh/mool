@@ -1,0 +1,5 @@
+error: duplicate column 'value'
+ --> tests/compile/fail/model_duplicate_column.rs:9:5
+  |
+9 |     second: i64,
+  |     ^^^^^^

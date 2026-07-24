@@ -13,7 +13,7 @@ use super::expr::{ColumnRef, ExprNode};
 use super::handles::{Table, VarId};
 use super::output::SelectAssignment;
 use super::plan::{ParamSource, QueryPlan};
-use super::source::Source;
+use super::source::{CteSource, Source};
 use super::validate::{output_column, table_name, validate_identifier};
 
 pub(super) fn statement_from_plan(
@@ -34,9 +34,76 @@ pub(super) fn statement_from_plan(
 }
 
 pub(super) fn finish_plan(plan: QueryPlan) -> Result<QueryPlan, QueryError> {
+    validate_plan_invariants(&plan)?;
     validate_missing_binds(&plan)?;
     validate_unused_binds(&plan)?;
     Ok(plan)
+}
+
+/// Validates bind metadata shared by planning, execution, and public inspection.
+fn validate_plan_invariants(plan: &QueryPlan) -> Result<(), QueryError> {
+    let dynamic = plan.bind_order.len();
+    if plan.dynamic_bind_count != dynamic {
+        return Err(QueryError::BindCountMismatch {
+            expected: dynamic,
+            got: plan.dynamic_bind_count,
+        });
+    }
+    let total = plan
+        .prebound_count
+        .checked_add(dynamic)
+        .ok_or_else(|| QueryError::BindError("planned bind count overflow".to_string()))?;
+    if plan.total_bind_count != total {
+        return Err(QueryError::BindCountMismatch {
+            expected: total,
+            got: plan.total_bind_count,
+        });
+    }
+    validate_bind_positions(plan)
+}
+
+/// Ensures every generated bind slot is represented exactly in parameter metadata.
+fn validate_bind_positions(plan: &QueryPlan) -> Result<(), QueryError> {
+    let mut positions = HashSet::with_capacity(plan.dynamic_bind_count);
+    for (offset, name) in plan.bind_order.iter().enumerate() {
+        let expected = plan.prebound_count + offset + 1;
+        let spec = plan.params.get(name).ok_or_else(|| {
+            QueryError::BindError(format!("missing parameter metadata for '{name}'"))
+        })?;
+        if !spec.occurrences.contains(&expected) {
+            return Err(QueryError::BindError(format!(
+                "parameter '{name}' is missing planned position {expected}"
+            )));
+        }
+        positions.insert(expected);
+    }
+    validate_param_occurrences(plan, &positions)
+}
+
+/// Rejects invalid first positions and occurrence references outside planned slots.
+fn validate_param_occurrences(
+    plan: &QueryPlan,
+    positions: &HashSet<usize>,
+) -> Result<(), QueryError> {
+    for spec in plan.params.values() {
+        if spec.occurrences.first() != Some(&spec.position) {
+            return Err(QueryError::BindError(format!(
+                "parameter '{}' has inconsistent first position",
+                spec.name
+            )));
+        }
+        if spec
+            .occurrences
+            .iter()
+            .any(|position| !positions.contains(position))
+        {
+            return Err(QueryError::BindError(format!(
+                "parameter '{}' references an unplanned bind position",
+                spec.name
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn validate_missing_binds(plan: &QueryPlan) -> Result<(), QueryError> {
@@ -140,13 +207,13 @@ pub(super) fn collect_source_binds(
     }
 }
 
-pub(super) fn collect_source_ctes(source: &Source, used: &mut HashSet<String>) {
+pub(super) fn collect_source_ctes(source: &Source, used: &mut HashSet<CteSource>) {
     if let Source::Cte(cte) = source {
-        used.insert(cte.data.name.to_string());
+        used.insert(cte.clone());
     }
 }
 
-pub(super) fn collect_expr_ctes(node: &ExprNode, used: &mut HashSet<String>) {
+pub(super) fn collect_expr_ctes(node: &ExprNode, used: &mut HashSet<CteSource>) {
     match node {
         ExprNode::Column(_) | ExprNode::Value(_) => {}
         ExprNode::Binary { left, right, .. } | ExprNode::Bool { left, right, .. } => {
@@ -227,7 +294,7 @@ fn collect_bound_binds(
     Ok(())
 }
 
-fn collect_window_ctes(window: &super::window::WindowSpec, used: &mut HashSet<String>) {
+fn collect_window_ctes(window: &super::window::WindowSpec, used: &mut HashSet<CteSource>) {
     for expr in &window.partitions {
         collect_expr_ctes(expr, used);
     }
@@ -240,23 +307,32 @@ fn collect_window_ctes(window: &super::window::WindowSpec, used: &mut HashSet<St
     }
 }
 
-fn collect_bound_ctes(bound: &super::window::FrameBound, used: &mut HashSet<String>) {
+fn collect_bound_ctes(bound: &super::window::FrameBound, used: &mut HashSet<CteSource>) {
     if let Some(expr) = &bound.expr {
         collect_expr_ctes(expr, used);
     }
 }
 
 pub(super) fn validate_cte_usage(
-    defined: &HashSet<String>,
-    used: &HashSet<String>,
+    defined: &indexmap::IndexMap<String, CteSource>,
+    used: &HashSet<CteSource>,
+    named_used: &HashSet<String>,
 ) -> Result<(), QueryError> {
-    for name in defined {
-        if !used.contains(name) {
+    for (name, source) in defined {
+        if !used.contains(source) && !named_used.contains(name) {
             return Err(QueryError::BindError(format!("unused CTE '{}'", name)));
         }
     }
-    for name in used {
-        if !defined.contains(name) {
+    for source in used {
+        if !defined.values().any(|defined| defined == source) {
+            return Err(QueryError::BindError(format!(
+                "CTE '{}' is not registered",
+                source.data.name
+            )));
+        }
+    }
+    for name in named_used {
+        if !defined.contains_key(name) {
             return Err(QueryError::BindError(format!(
                 "CTE '{}' is not registered",
                 name
@@ -316,11 +392,11 @@ fn validate_output_record(
     )))
 }
 
-pub(super) fn bind_columns<T>() -> Result<Vec<String>, QueryError>
+pub(super) fn insert_columns<T>() -> Result<Vec<String>, QueryError>
 where
     T: Record,
 {
-    let columns = T::record_bind_column_names();
+    let columns = T::record_insert_column_names();
     if columns.is_empty() {
         return Err(QueryError::BindError("no bindable columns".to_string()));
     }
@@ -363,7 +439,10 @@ pub(super) fn upsert_update_columns<'a>(
     Ok(update_columns)
 }
 
-pub(super) fn bind_rows<T>(rows: &[T], col_count: usize) -> Result<Arguments<'static>, QueryError>
+pub(super) fn bind_insert_rows<T>(
+    rows: &[T],
+    col_count: usize,
+) -> Result<Arguments<'static>, QueryError>
 where
     T: Record,
 {
@@ -374,12 +453,12 @@ where
     }
     let mut args = Arguments::default();
     for row in rows {
-        bind_row(row, col_count, &mut args)?;
+        bind_insert_row(row, col_count, &mut args)?;
     }
     Ok(args)
 }
 
-pub(super) fn bind_selected_rows<T>(
+pub(super) fn bind_update_rows<T>(
     rows: &[T],
     columns: &[&str],
 ) -> Result<Arguments<'static>, QueryError>
@@ -391,7 +470,7 @@ where
     let mut args = Arguments::default();
     for row in rows {
         let before = args.len();
-        row.record_bind_selected(columns, &mut args)
+        row.record_bind_update_selected(columns, &mut args)
             .map_err(|error| QueryError::BindError(error.to_string()))?;
         let added = args.len().saturating_sub(before);
         if added != columns.len() {
@@ -404,7 +483,7 @@ where
     Ok(args)
 }
 
-pub(super) fn bind_row<T>(
+pub(super) fn bind_insert_row<T>(
     row: &T,
     col_count: usize,
     args: &mut Arguments<'static>,
@@ -415,7 +494,7 @@ where
     use sqlx::Arguments as _;
 
     let before = args.len();
-    row.record_bind_values(args)
+    row.record_bind_insert_values(args)
         .map_err(|err| QueryError::BindError(err.to_string()))?;
     let bound = args.len().saturating_sub(before);
     if bound != col_count {

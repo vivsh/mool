@@ -1,4 +1,4 @@
-mod common;
+pub mod common;
 
 use common::{Account, AuditLog, Membership, PostWithAuthor, col};
 #[cfg(any(feature = "postgres", feature = "sqlite"))]

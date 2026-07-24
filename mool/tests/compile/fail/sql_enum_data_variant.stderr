@@ -1,5 +1,5 @@
 error: SqlEnum supports fieldless variants only
- --> tests/compile/fail/sql_enum_data_variant.rs:8:5
+ --> tests/compile/fail/sql_enum_data_variant.rs:6:5
   |
-8 |     Published(i32),
+6 |     Published(i32),
   |     ^^^^^^^^^^^^^^

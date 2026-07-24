@@ -6,6 +6,7 @@
 pub mod filterable;
 pub mod model;
 pub mod record;
+mod record_types;
 mod schemable;
 pub mod sql_enum;
 mod typed_handles;

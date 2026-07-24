@@ -49,10 +49,30 @@ struct BackendMembership {
     role: String,
 }
 
+#[derive(Clone)]
+struct RepeatedArgument {
+    value: db::Expr<i64>,
+}
+
+impl db::DbExpression<i64> for RepeatedArgument {
+    fn args(&self) -> db::FunctionArgs {
+        db::FunctionArgs::new((&self.value,))
+    }
+
+    fn render(&self, ctx: &mut db::ExprRenderCtx<'_>) -> Result<(), db::QueryError> {
+        ctx.push_sql("(");
+        ctx.push_arg(0)?;
+        ctx.push_sql(" + ");
+        ctx.push_arg(0)?;
+        ctx.push_sql(")");
+        Ok(())
+    }
+}
+
 #[cfg(feature = "postgres")]
-const REPEATED_VAR_SQL: &str = "SELECT backend_post.id, backend_post.title, backend_post.published FROM backend_posts backend_post WHERE ((backend_post.id = $1) OR (backend_post.id > $1))";
+const REPEATED_VAR_SQL: &str = "SELECT backend_posts.id, backend_posts.title, backend_posts.published FROM backend_posts WHERE ((backend_posts.id = $1) OR (backend_posts.id > $1))";
 #[cfg(any(feature = "sqlite", feature = "mysql", feature = "mariadb"))]
-const REPEATED_VAR_SQL: &str = "SELECT backend_post.id, backend_post.title, backend_post.published FROM backend_posts backend_post WHERE ((backend_post.id = ?) OR (backend_post.id > ?))";
+const REPEATED_VAR_SQL: &str = "SELECT backend_posts.id, backend_posts.title, backend_posts.published FROM backend_posts WHERE ((backend_posts.id = ?) OR (backend_posts.id > ?))";
 
 #[cfg(feature = "postgres")]
 const UPSERT_SQL: &str = "INSERT INTO backend_posts (title, published) VALUES ($1, $2) ON CONFLICT (title) DO UPDATE SET published = EXCLUDED.published";
@@ -67,18 +87,17 @@ const RAW_SQL: &str = "SELECT * FROM backend_posts WHERE id = $1 OR id = $1";
 const RAW_SQL: &str = "SELECT * FROM backend_posts WHERE id = ? OR id = ?";
 
 #[cfg(feature = "postgres")]
-const PREDICATE_SQL: &str = "SELECT backend_post.id, backend_post.title, backend_post.published FROM backend_posts backend_post WHERE (((backend_post.id BETWEEN $1 AND $2) AND (backend_post.title IS NOT NULL)) AND backend_post.id NOT IN ($3, $4))";
+const PREDICATE_SQL: &str = "SELECT backend_posts.id, backend_posts.title, backend_posts.published FROM backend_posts WHERE (((backend_posts.id BETWEEN $1 AND $2) AND (backend_posts.title IS NOT NULL)) AND backend_posts.id NOT IN ($3, $4))";
 #[cfg(any(feature = "sqlite", feature = "mysql", feature = "mariadb"))]
-const PREDICATE_SQL: &str = "SELECT backend_post.id, backend_post.title, backend_post.published FROM backend_posts backend_post WHERE (((backend_post.id BETWEEN ? AND ?) AND (backend_post.title IS NOT NULL)) AND backend_post.id NOT IN (?, ?))";
+const PREDICATE_SQL: &str = "SELECT backend_posts.id, backend_posts.title, backend_posts.published FROM backend_posts WHERE (((backend_posts.id BETWEEN ? AND ?) AND (backend_posts.title IS NOT NULL)) AND backend_posts.id NOT IN (?, ?))";
 
 #[cfg(feature = "postgres")]
 const CAST_SQL: &str =
-    "SELECT CAST((backend_post.id + $1) AS DOUBLE PRECISION) FROM backend_posts backend_post";
+    "SELECT CAST((backend_posts.id + $1) AS DOUBLE PRECISION) FROM backend_posts LIMIT 1";
 #[cfg(feature = "sqlite")]
-const CAST_SQL: &str = "SELECT CAST((backend_post.id + ?) AS REAL) FROM backend_posts backend_post";
+const CAST_SQL: &str = "SELECT CAST((backend_posts.id + ?) AS REAL) FROM backend_posts LIMIT 1";
 #[cfg(any(feature = "mysql", feature = "mariadb"))]
-const CAST_SQL: &str =
-    "SELECT CAST((backend_post.id + ?) AS DOUBLE) FROM backend_posts backend_post";
+const CAST_SQL: &str = "SELECT CAST((backend_posts.id + ?) AS DOUBLE) FROM backend_posts LIMIT 1";
 
 /// Verifies the selected backend owns placeholder reuse and bind ordering.
 #[test]
@@ -101,6 +120,44 @@ fn selected_backend_renders_typed_variables() {
     assert_eq!(parameter.occurrences, vec![1, 2]);
 }
 
+/// Verifies repeated custom-expression children follow backend placeholder semantics.
+#[test]
+fn selected_backend_renders_repeated_custom_arguments() {
+    let posts = BackendPost::table();
+    let expression = db::queries::funcs::custom(RepeatedArgument {
+        value: db::val(7_i64),
+    });
+    let plan = db::from(&posts)
+        .scalar(expression)
+        .plan()
+        .expect("repeated custom argument");
+
+    #[cfg(feature = "postgres")]
+    assert_eq!(plan.sql, "SELECT ($1 + $1) FROM backend_posts LIMIT 1");
+    #[cfg(any(feature = "sqlite", feature = "mysql", feature = "mariadb"))]
+    assert_eq!(plan.sql, "SELECT (? + ?) FROM backend_posts LIMIT 1");
+    #[cfg(feature = "postgres")]
+    assert_eq!(plan.total_bind_count, 1);
+    #[cfg(any(feature = "sqlite", feature = "mysql", feature = "mariadb"))]
+    assert_eq!(plan.total_bind_count, 2);
+    #[cfg(feature = "postgres")]
+    assert_eq!(
+        plan.params
+            .get("__typed_1")
+            .expect("generated parameter")
+            .occurrences,
+        vec![1, 1]
+    );
+    #[cfg(any(feature = "sqlite", feature = "mysql", feature = "mariadb"))]
+    assert_eq!(
+        plan.params
+            .values()
+            .flat_map(|parameter| parameter.occurrences.iter().copied())
+            .collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+}
+
 /// Verifies upsert syntax is delegated to the selected backend renderer.
 #[test]
 fn selected_backend_renders_upsert() {
@@ -117,6 +174,29 @@ fn selected_backend_renders_upsert() {
 
     assert_eq!(plan.sql, UPSERT_SQL);
     assert_eq!(plan.total_bind_count, 2);
+}
+
+/// Verifies runtime dialect capability failures retain machine-readable context.
+#[cfg(feature = "mariadb")]
+#[test]
+fn mariadb_reports_structured_unsupported_json_features() {
+    let posts = BackendPost::table();
+    let error = db::from(&posts)
+        .filter(db::funcs::json::exists(
+            db::funcs::json::value(serde_json::json!({ "published": true })),
+            "published",
+        ))
+        .all::<BackendPost>()
+        .plan()
+        .expect_err("MariaDB JSON path expressions are not implemented");
+
+    match error {
+        db::QueryError::Unsupported { dialect, feature } => {
+            assert_eq!(dialect, "mariadb");
+            assert_eq!(feature, "JSON path existence");
+        }
+        other => panic!("expected unsupported dialect feature, got {other}"),
+    }
 }
 
 /// Verifies explicit batch sizing produces inspectable plans with stable row ranges.
@@ -584,7 +664,7 @@ fn selected_backend_renders_complete_predicates() {
 #[test]
 fn selected_backend_renders_arithmetic_casts() {
     let posts = BackendPost::table();
-    let expression = db::funcs::cast::<i64, f64>(posts.id.add(db::val(1_i64)));
+    let expression = db::funcs::cast::<i64, f64>(posts.id.plus(db::val(1_i64)));
     let plan = db::from(&posts)
         .scalar(expression)
         .plan()
@@ -659,7 +739,7 @@ fn selected_backend_renders_postgres_distinct_on() {
 
     assert_eq!(
         plan.sql,
-        "SELECT DISTINCT ON (backend_post.title) backend_post.id, backend_post.title, backend_post.published FROM backend_posts backend_post ORDER BY backend_post.title ASC"
+        "SELECT DISTINCT ON (backend_posts.title) backend_posts.id, backend_posts.title, backend_posts.published FROM backend_posts ORDER BY backend_posts.title ASC"
     );
 }
 

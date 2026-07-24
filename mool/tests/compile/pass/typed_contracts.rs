@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use mool as db;
 use mool::Model;
 
@@ -18,6 +16,12 @@ struct PostSummary {
     title: String,
 }
 
+#[derive(Debug, Clone, db::Record)]
+#[table(name = "typed_posts")]
+struct PostPatch {
+    title: String,
+}
+
 fn main() {
     let posts = Post::table();
     let id = db::var::<i64>().named("id");
@@ -31,9 +35,21 @@ fn main() {
         .set(&output.id, posts.id.clone())
         .set(&output.title, posts.title.clone());
 
-    let _ = db::from(&posts).update_using(|write| {
-        write
-            .set(&posts.id, db::val(2_i64))
-            .set(&posts.title, db::val("updated".to_string()))
-    });
+    let patch = PostPatch {
+        title: "draft".to_string(),
+    };
+    let _ = db::from(&posts).update(&patch).set(
+        &posts.title,
+        db::val("updated".to_string()),
+    );
+
+    let subquery = db::from(&posts)
+        .all::<PostSummary>()
+        .subquery_as("typed_post_subquery");
+    let _ = db::from(&subquery).all::<PostSummary>();
+
+    let cte = db::from(&posts)
+        .all::<PostSummary>()
+        .cte_as("typed_post_cte");
+    let _ = db::from(&cte).with(&cte).all::<PostSummary>();
 }

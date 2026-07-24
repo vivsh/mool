@@ -1,7 +1,10 @@
-/// Database dialect for placeholder formatting.
-#[allow(dead_code)] // Non-selected variants are exercised by parser unit tests.
+/// SQL dialect selected by the active backend feature.
+///
+/// Custom functions and expressions receive this value while rendering so one
+/// implementation can provide portable behavior without compile-time dialect
+/// generics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Dialect {
+pub enum SqlDialect {
     /// PostgreSQL uses $1, $2, $3, etc.
     Postgres,
     /// MySQL uses ? for all placeholders
@@ -12,7 +15,7 @@ pub enum Dialect {
     Sqlite,
 }
 
-impl Dialect {
+impl SqlDialect {
     pub(crate) const fn active() -> Self {
         #[cfg(feature = "postgres")]
         return Self::Postgres;
@@ -25,5 +28,15 @@ impl Dialect {
 
         #[cfg(feature = "sqlite")]
         return Self::Sqlite;
+    }
+
+    /// Returns the stable lowercase dialect name used in diagnostics.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Postgres => "postgres",
+            Self::Mysql => "mysql",
+            Self::Mariadb => "mariadb",
+            Self::Sqlite => "sqlite",
+        }
     }
 }

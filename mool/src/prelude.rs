@@ -1,13 +1,18 @@
 //! Canonical imports for application code using Mool.
 
+pub use crate::{gaman, migrations, schema, sqlx};
+
+#[cfg(mool_has_backend)]
+pub use crate::backend;
+#[cfg(mool_has_backend)]
 pub use crate::queries::{Expr, IntoExpr, ParamSource, ParamSpec, QueryPlan, funcs};
+#[cfg(mool_has_backend)]
 pub use crate::{
     Backref, DbConf, DbError, DbPool, DbSession, FilterBuilder, Filterable, JoinColumn,
     JoinRelation, JoinType, ManyBackref, ManyToMany, Model, ModelSchema, OneBackref, Page,
     PrefetchKey, QueryError, ReceivesPrefetch, Record, RecordSchema, SqlEnum, Statement, backref,
     from, many_to_many, meta, out, prefetch, query, val, var,
 };
-pub use crate::{backend, gaman, migrations, schema, sqlx};
 
 #[cfg(feature = "mysql")]
 pub use crate::backend::IgnoreErrorsExt;

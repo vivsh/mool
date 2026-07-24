@@ -1,4 +1,4 @@
-mod common;
+pub mod common;
 
 use common::{Post, PostSummary};
 use mool as db;
@@ -39,23 +39,21 @@ async fn mock_session_executes_planned_calls_and_records_sql() {
 
     assert_eq!(
         session
-            .execute(db::Statement::from_str(
-                "INSERT INTO posts (title) VALUES (?)"
-            ))
+            .execute(db::Statement::raw("INSERT INTO posts (title) VALUES (?)"))
             .await
             .unwrap(),
         1
     );
     assert_eq!(
         session
-            .fetch_scalar::<i64>(db::Statement::from_str("SELECT COUNT(*) FROM posts"))
+            .fetch_scalar::<i64>(db::Statement::raw("SELECT COUNT(*) FROM posts"))
             .await
             .unwrap(),
         2
     );
     assert_eq!(
         session
-            .fetch_all::<Post>(db::Statement::from_str("SELECT * FROM posts"))
+            .fetch_all::<Post>(db::Statement::raw("SELECT * FROM posts"))
             .await
             .unwrap()
             .len(),
@@ -63,9 +61,7 @@ async fn mock_session_executes_planned_calls_and_records_sql() {
     );
     assert_eq!(
         session
-            .fetch_one::<Post>(db::Statement::from_str(
-                "SELECT * FROM posts LIMIT 2 OFFSET 0",
-            ))
+            .fetch_one::<Post>(db::Statement::raw("SELECT * FROM posts LIMIT 2 OFFSET 0",))
             .await
             .unwrap()
             .id,
@@ -73,9 +69,7 @@ async fn mock_session_executes_planned_calls_and_records_sql() {
     );
     assert_eq!(
         session
-            .fetch_optional::<Post>(db::Statement::from_str(
-                "SELECT * FROM posts LIMIT 1 OFFSET 0",
-            ))
+            .fetch_optional::<Post>(db::Statement::raw("SELECT * FROM posts LIMIT 1 OFFSET 0",))
             .await
             .unwrap()
             .unwrap()
@@ -97,7 +91,7 @@ async fn mock_session_supports_typed_query_terminals() {
         matcher: StatementMatcher::Contains("FROM posts".to_string()),
         response: PlannedResponse::OkAnyVec(Box::new(vec![post(1, "a")])),
     });
-    session.plan_fetch_scalar_ok("SELECT COUNT(*) FROM posts post", 1_i64);
+    session.plan_fetch_scalar_ok("SELECT COUNT(*) FROM posts", 1_i64);
 
     let posts = Post::table();
     let rows = db::from(&posts)
@@ -118,7 +112,7 @@ async fn mock_session_reports_type_mismatch_errors() {
     session.plan_fetch_scalar_ok("SELECT COUNT(*) FROM posts", 1_i64);
 
     let err = session
-        .fetch_scalar::<String>(db::Statement::from_str("SELECT COUNT(*) FROM posts"))
+        .fetch_scalar::<String>(db::Statement::raw("SELECT COUNT(*) FROM posts"))
         .await
         .unwrap_err();
 
@@ -133,7 +127,7 @@ async fn relaxed_mock_session_returns_unexpected_call_error() {
     session.strict = false;
 
     let err = session
-        .execute(db::Statement::from_str("DELETE FROM posts"))
+        .execute(db::Statement::raw("DELETE FROM posts"))
         .await
         .unwrap_err();
 
@@ -149,7 +143,7 @@ async fn strict_mock_session_panics_on_call_order_mismatch() {
     session.plan_execute_ok("INSERT", 1);
 
     let _ = session
-        .fetch_scalar::<i64>(db::Statement::from_str("SELECT COUNT(*)"))
+        .fetch_scalar::<i64>(db::Statement::raw("SELECT COUNT(*)"))
         .await;
 }
 
@@ -167,11 +161,28 @@ async fn dummy_pool_delegates_to_mock_session() {
     });
 
     let rows = pool
-        .fetch_all::<PostSummary>(db::Statement::from_str("SELECT id, title FROM posts"))
+        .fetch_all::<PostSummary>(db::Statement::raw("SELECT id, title FROM posts"))
         .await
         .unwrap();
 
     assert_eq!(rows[0].title, "a");
     assert_eq!(pool.recorded().len(), 1);
     assert_eq!(pool.recorded()[0].kind, DbCallKind::FetchAll);
+}
+
+/// Verifies pagination overflow fails before issuing its count or slice query.
+#[tokio::test]
+async fn pagination_overflow_makes_no_session_calls() {
+    let posts = Post::table();
+    let mut session = MockDbSession::new();
+    session.strict = false;
+
+    let error = db::from(&posts)
+        .page::<Post, _>(usize::MAX, 2, &mut session)
+        .await
+        .expect_err("pagination offset must overflow");
+
+    assert_eq!(error.code(), "statement_error");
+    assert!(error.to_string().contains("pagination offset overflow"));
+    assert!(session.recorded.is_empty());
 }

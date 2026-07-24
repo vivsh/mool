@@ -1,10 +1,7 @@
-#![allow(async_fn_in_trait)]
-
 use crate::backend::{Database, Pool, Row};
 use crate::{QueryError, Statement};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
-use std::pin::Pin;
 #[cfg(feature = "tracing")]
 use std::{hash::Hasher, time::Instant};
 use thiserror::Error;
@@ -130,16 +127,28 @@ pub enum DbError {
         #[source]
         source: sqlx::Error,
     },
-    #[error("{operation} failed with database error {code}: {message}")]
+    #[error("{operation} failed with database error {code:?}: {message}")]
     Database {
         operation: DbOperation,
-        code: String,
+        code: Option<String>,
         message: String,
         #[source]
         source: sqlx::Error,
     },
     #[error("{operation} failed with an unclassified SQLx error")]
     Sqlx {
+        operation: DbOperation,
+        #[source]
+        source: sqlx::Error,
+    },
+    #[error("{operation} could not proceed because SQLite is busy")]
+    Busy {
+        operation: DbOperation,
+        #[source]
+        source: sqlx::Error,
+    },
+    #[error("{operation} could not proceed because SQLite is locked")]
+    Locked {
         operation: DbOperation,
         #[source]
         source: sqlx::Error,
@@ -153,11 +162,6 @@ pub enum DbError {
     Mock {
         operation: &'static str,
         reason: String,
-    },
-    #[error("rollback failed after an earlier transaction error: {original}")]
-    RollbackFailed {
-        original: Box<DbError>,
-        rollback: Box<DbError>,
     },
     #[error("affected-row count overflowed u64 while combining batch chunks")]
     AffectedRowsOverflow,
@@ -185,9 +189,10 @@ impl DbError {
             DbError::Configuration { .. } => "configuration_error",
             DbError::Database { .. } => "database_error",
             DbError::Sqlx { .. } => "sqlx_error",
+            DbError::Busy { .. } => "database_busy",
+            DbError::Locked { .. } => "database_locked",
             DbError::Capability { .. } => "unsupported_feature",
             DbError::Mock { .. } => "mock_error",
-            DbError::RollbackFailed { .. } => "rollback_failed",
             DbError::AffectedRowsOverflow => "affected_rows_overflow",
             DbError::Relation { .. } => "relation_error",
         }
@@ -251,16 +256,22 @@ fn classify_database_error(
         };
     }
     let code = metadata.code;
-    if is_serialization(&code) {
+    if is_serialization(code.as_deref()) {
         return DbError::Serialization { operation, source };
     }
-    if is_deadlock(&code) {
+    if is_deadlock(code.as_deref()) {
         return DbError::Deadlock { operation, source };
     }
-    if is_timeout(&code) {
+    if code.as_deref() == Some("5") {
+        return DbError::Busy { operation, source };
+    }
+    if code.as_deref() == Some("6") {
+        return DbError::Locked { operation, source };
+    }
+    if is_timeout(code.as_deref()) {
         return DbError::Timeout { operation, source };
     }
-    if is_cancelled(&code) {
+    if is_cancelled(code.as_deref()) {
         return DbError::Cancelled { operation, source };
     }
     DbError::Database {
@@ -274,7 +285,7 @@ fn classify_database_error(
 struct DatabaseErrorMetadata {
     integrity: Option<IntegrityKind>,
     constraint: Option<String>,
-    code: String,
+    code: Option<String>,
     message: String,
 }
 
@@ -285,7 +296,7 @@ fn database_error_metadata(error: &sqlx::Error) -> Option<DatabaseErrorMetadata>
     Some(DatabaseErrorMetadata {
         integrity: integrity_kind(database.as_ref()),
         constraint: database.constraint().map(str::to_owned),
-        code: database.code().unwrap_or_default().into_owned(),
+        code: database.code().map(|code| code.into_owned()),
         message: database.message().to_owned(),
     })
 }
@@ -301,43 +312,49 @@ fn integrity_kind(database: &dyn sqlx::error::DatabaseError) -> Option<Integrity
     }
 }
 
-fn is_serialization(code: &str) -> bool {
-    code == "40001"
+fn is_serialization(code: Option<&str>) -> bool {
+    code == Some("40001")
 }
 
-fn is_deadlock(code: &str) -> bool {
-    matches!(code, "40P01" | "1213")
+fn is_deadlock(code: Option<&str>) -> bool {
+    matches!(code, Some("40P01" | "1213"))
 }
 
-fn is_timeout(code: &str) -> bool {
-    matches!(code, "1205" | "5" | "6")
+fn is_timeout(code: Option<&str>) -> bool {
+    code == Some("1205")
 }
 
-fn is_cancelled(code: &str) -> bool {
-    matches!(code, "57014" | "1317")
+fn is_cancelled(code: Option<&str>) -> bool {
+    matches!(code, Some("57014" | "1317"))
 }
 
 pub trait DbSession {
     /// Executes a statement and returns its affected-row count.
-    async fn execute(&mut self, qs: Statement) -> Result<u64, DbError>;
+    fn execute(&mut self, qs: Statement) -> impl Future<Output = Result<u64, DbError>> + Send;
 
     /// Fetches exactly one decoded row.
-    async fn fetch_one<M>(&mut self, qs: Statement) -> Result<M, DbError>
+    fn fetch_one<M>(&mut self, qs: Statement) -> impl Future<Output = Result<M, DbError>> + Send
     where
         M: for<'r> sqlx::FromRow<'r, Row> + Send + Unpin + 'static;
 
     /// Fetches all decoded rows into memory.
-    async fn fetch_all<M>(&mut self, qs: Statement) -> Result<Vec<M>, DbError>
+    fn fetch_all<M>(
+        &mut self,
+        qs: Statement,
+    ) -> impl Future<Output = Result<Vec<M>, DbError>> + Send
     where
         M: for<'r> sqlx::FromRow<'r, Row> + Send + Unpin + 'static;
 
     /// Fetches zero or one decoded row.
-    async fn fetch_optional<M>(&mut self, qs: Statement) -> Result<Option<M>, DbError>
+    fn fetch_optional<M>(
+        &mut self,
+        qs: Statement,
+    ) -> impl Future<Output = Result<Option<M>, DbError>> + Send
     where
         M: for<'r> sqlx::FromRow<'r, Row> + Send + Unpin + 'static;
 
     /// Fetches exactly one scalar value.
-    async fn fetch_scalar<T>(&mut self, qs: Statement) -> Result<T, DbError>
+    fn fetch_scalar<T>(&mut self, qs: Statement) -> impl Future<Output = Result<T, DbError>> + Send
     where
         for<'d> T: sqlx::Decode<'d, Database> + sqlx::Type<Database> + Send + Unpin + 'static;
 }
@@ -346,9 +363,6 @@ pub trait DbSession {
 pub struct DbTransaction<'a> {
     transaction: sqlx::Transaction<'a, Database>,
 }
-
-/// Boxed asynchronous callback result used by [`DbPool::transaction`].
-pub type TransactionFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, DbError>> + Send + 'a>>;
 
 impl<'a> DbTransaction<'a> {
     /// Returns the underlying SQLx transaction for advanced backend operations.
@@ -537,6 +551,9 @@ impl DbPool {
     }
 
     /// Wraps an existing selected-backend SQLx pool.
+    ///
+    /// PostgreSQL, MySQL, and MariaDB pools must already initialize sessions to
+    /// UTC for Mool's portable datetime expressions to retain their contract.
     pub fn from_pool(pool: Pool) -> Self {
         Self { pool }
     }
@@ -546,6 +563,26 @@ impl DbPool {
         let builder = sqlx::pool::PoolOptions::<Database>::new()
             .min_connections(conf.min_connections)
             .max_connections(conf.max_connections);
+
+        #[cfg(feature = "postgres")]
+        let builder = builder.after_connect(|connection, _metadata| {
+            Box::pin(async move {
+                sqlx::query("SET TIME ZONE 'UTC'")
+                    .execute(connection)
+                    .await?;
+                Ok(())
+            })
+        });
+
+        #[cfg(any(feature = "mysql", feature = "mariadb"))]
+        let builder = builder.after_connect(|connection, _metadata| {
+            Box::pin(async move {
+                sqlx::query("SET time_zone = '+00:00'")
+                    .execute(connection)
+                    .await?;
+                Ok(())
+            })
+        });
 
         let pool = if conf.lazy {
             builder
@@ -569,34 +606,6 @@ impl DbPool {
             .await
             .map_err(|error| DbError::from_sqlx(DbOperation::Begin, error))?;
         Ok(DbTransaction { transaction: tx })
-    }
-
-    /// Runs a callback in a transaction, committing only when it returns `Ok`.
-    ///
-    /// The callback must return [`TransactionFuture`], usually by wrapping an
-    /// `async move` block in [`Box::pin`]. Callback errors trigger an explicit
-    /// rollback before the original error is returned.
-    pub async fn transaction<T, F>(&self, callback: F) -> Result<T, DbError>
-    where
-        T: Send,
-        F: for<'tx> FnOnce(&'tx mut DbTransaction<'_>) -> TransactionFuture<'tx, T>,
-    {
-        let mut transaction = self.begin().await?;
-        match callback(&mut transaction).await {
-            Ok(value) => {
-                transaction.commit().await?;
-                Ok(value)
-            }
-            Err(error) => {
-                if let Err(rollback) = transaction.rollback().await {
-                    return Err(DbError::RollbackFailed {
-                        original: Box::new(error),
-                        rollback: Box::new(rollback),
-                    });
-                }
-                Err(error)
-            }
-        }
     }
 }
 

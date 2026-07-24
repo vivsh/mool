@@ -11,7 +11,7 @@ use super::super::binds::statement_from_plan;
 use super::super::expr::IntoExpr;
 use super::super::handles::{Column, Var};
 use super::super::plan::QueryPlan;
-use super::super::values::{WriteInput, WriteUsing, WriteValues};
+use super::super::values::{WriteInput, WriteValues};
 use super::{
     BatchInsert, BatchUpdate, BatchUpsert, Delete, Insert, OwnedBatchInsert, OwnedBatchUpdate,
     OwnedBatchUpsert, OwnedInsert, OwnedUpdate, Update,
@@ -63,18 +63,6 @@ where
         Insert {
             scope: self.scope,
             row: WriteValues::record(self.row).set(column, expr),
-        }
-    }
-
-    /// Adds computed write assignments on top of the record payload.
-    #[doc(hidden)]
-    pub fn using<F>(self, f: F) -> Insert<WriteValues<'a, T>>
-    where
-        F: FnOnce(WriteUsing) -> WriteUsing,
-    {
-        Insert {
-            scope: self.scope,
-            row: WriteValues::record(self.row).extend(f(WriteUsing::new()).into_values()),
         }
     }
 
@@ -146,18 +134,6 @@ where
         }
     }
 
-    /// Adds computed write assignments on top of the record payload.
-    #[doc(hidden)]
-    pub fn using<F>(self, f: F) -> Update<WriteValues<'a, T>>
-    where
-        F: FnOnce(WriteUsing) -> WriteUsing,
-    {
-        Update {
-            scope: self.scope,
-            row: WriteValues::record(self.row).extend(f(WriteUsing::new()).into_values()),
-        }
-    }
-
     /// Copies the record payload into an owned executable.
     pub fn into_owned(self) -> OwnedUpdate<T>
     where
@@ -217,15 +193,15 @@ where
 
     /// Returns every statement plan and its input row range.
     pub fn plans(&self) -> Result<BatchPlan, QueryError> {
-        let columns = T::record_bind_column_names().len();
+        let columns = T::record_insert_column_names().len();
         let ranges = self
             .policy
             .ranges("batch insert", self.rows.len(), columns)?;
         let mode = self.mode();
         let mut statements = Vec::with_capacity(ranges.len());
         for range in ranges {
-            let (plan, _) = self.scope.plan_batch_insert_mode_with_args(
-                &self.rows[range.clone()],
+            let plan = self.scope.plan_batch_insert_mode::<T>(
+                range.len(),
                 Dialect::active(),
                 &mode,
                 None,
@@ -258,7 +234,7 @@ where
     where
         S: DbSession,
     {
-        let columns = T::record_bind_column_names().len();
+        let columns = T::record_insert_column_names().len();
         let ranges = self
             .policy
             .ranges("batch insert", self.rows.len(), columns)?;
@@ -319,15 +295,15 @@ where
 
     /// Returns every statement plan and its input row range.
     pub fn plans(&self) -> Result<BatchPlan, QueryError> {
-        let columns = T::record_bind_column_names().len();
+        let columns = T::record_insert_column_names().len();
         let ranges = self
             .policy
             .ranges("batch upsert", self.rows.len(), columns)?;
         let mode = self.mode();
         let mut statements = Vec::with_capacity(ranges.len());
         for range in ranges {
-            let (plan, _) = self.scope.plan_batch_insert_mode_with_args(
-                &self.rows[range.clone()],
+            let plan = self.scope.plan_batch_insert_mode::<T>(
+                range.len(),
                 Dialect::active(),
                 &mode,
                 None,
@@ -361,7 +337,7 @@ where
     where
         S: DbSession,
     {
-        let columns = T::record_bind_column_names().len();
+        let columns = T::record_insert_column_names().len();
         let ranges = self
             .policy
             .ranges("batch upsert", self.rows.len(), columns)?;
@@ -411,7 +387,7 @@ where
         let ranges = self.ranges()?;
         let mut statements = Vec::with_capacity(ranges.len());
         for range in ranges {
-            let (plan, _) = self.scope.plan_batch_update_with_args(
+            let plan = self.scope.plan_batch_update(
                 &self.rows[range.clone()],
                 &self.update_columns,
                 Dialect::active(),
@@ -467,11 +443,11 @@ where
         self.scope
             .validate_batch_update_input::<T>(self.rows, &self.update_columns)?;
         let width = T::primary_key_columns().len() + self.update_columns.len();
-        let Some(first) = self.rows.first() else {
+        if self.rows.is_empty() {
             return self.policy.ranges("batch update", 0, width);
-        };
-        let (sample, _) = self.scope.plan_batch_update_with_args(
-            std::slice::from_ref(first),
+        }
+        let sample = self.scope.plan_batch_update(
+            &self.rows[..1],
             &self.update_columns,
             Dialect::active(),
             None,

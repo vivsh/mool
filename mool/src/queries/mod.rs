@@ -10,6 +10,7 @@
 
 mod api;
 mod batch;
+mod batch_validation;
 mod executables;
 mod expr;
 mod extension;
@@ -54,9 +55,16 @@ pub mod funcs {
         case, coalesce, cume_dist, dense_rank, first_value, lag, lag_by, lag_or, last_value, lead,
         lead_by, lead_or, now, nth_value, ntile, percent_rank, rank, row_number,
     };
+    pub use super::functions::datetime;
     pub use super::functions::json;
+    #[cfg(feature = "mariadb")]
+    pub use super::functions::mariadb;
+    #[cfg(feature = "mysql")]
+    pub use super::functions::mysql;
     #[cfg(feature = "postgres")]
     pub use super::functions::postgres;
+    #[cfg(feature = "sqlite")]
+    pub use super::functions::sqlite;
     pub use super::window::{
         current_row, following, preceding, range_between, rows_between, unbounded_following,
         unbounded_preceding, window,
@@ -93,6 +101,6 @@ pub use source::{Cte, Picked, ProjectedColumn, ProjectionSource, Subquery};
 #[doc(hidden)]
 pub use traits::Projectable;
 #[doc(hidden)]
-pub use values::{NoRecord, WriteInput, WriteValues};
+pub use values::{WriteInput, WriteValues};
 #[doc(hidden)]
 pub use window::{FrameBound, WindowFrame, WindowSpec};

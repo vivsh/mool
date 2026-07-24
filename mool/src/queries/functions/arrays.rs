@@ -178,13 +178,15 @@ where
         self.args.clone()
     }
 
-    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError> {
-        Ok(format!(
-            "({} {} {})",
-            ctx.arg(0)?,
-            self.operator(),
-            ctx.arg(1)?
-        ))
+    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<(), QueryError> {
+        ctx.push_sql("(");
+        ctx.push_arg(0)?;
+        ctx.push_sql(" ");
+        ctx.push_sql(self.operator());
+        ctx.push_sql(" ");
+        ctx.push_arg(1)?;
+        ctx.push_sql(")");
+        Ok(())
     }
 }
 
@@ -239,8 +241,11 @@ where
         self.args.clone()
     }
 
-    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError> {
-        Ok(format!("cardinality({}) = 0", ctx.arg(0)?))
+    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<(), QueryError> {
+        ctx.push_sql("cardinality(");
+        ctx.push_arg(0)?;
+        ctx.push_sql(") = 0");
+        Ok(())
     }
 }
 
@@ -252,15 +257,23 @@ where
         self.args.clone()
     }
 
-    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError> {
-        let array = ctx.arg(0)?;
-        match self.op {
-            ArrayUnaryOp::Length => Ok(format!("array_length({array}, 1)")),
-            ArrayUnaryOp::Cardinality => Ok(format!("cardinality({array})")),
+    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<(), QueryError> {
+        let suffix = match self.op {
+            ArrayUnaryOp::Length => {
+                ctx.push_sql("array_length(");
+                ", 1)"
+            }
+            ArrayUnaryOp::Cardinality => {
+                ctx.push_sql("cardinality(");
+                ")"
+            }
             ArrayUnaryOp::IsEmpty => Err(QueryError::BindError(
                 "array empty check is a predicate".to_string(),
-            )),
-        }
+            ))?,
+        };
+        ctx.push_arg(0)?;
+        ctx.push_sql(suffix);
+        Ok(())
     }
 }
 
@@ -305,8 +318,13 @@ where
         self.args.clone()
     }
 
-    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError> {
-        Ok(format!("array_position({}, {})", ctx.arg(0)?, ctx.arg(1)?))
+    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<(), QueryError> {
+        ctx.push_sql("array_position(");
+        ctx.push_arg(0)?;
+        ctx.push_sql(", ");
+        ctx.push_arg(1)?;
+        ctx.push_sql(")");
+        Ok(())
     }
 }
 
@@ -318,13 +336,19 @@ where
         self.args.clone()
     }
 
-    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError> {
-        match self.op {
-            ArrayValueOp::Any => Ok(format!("({} = ANY({}))", ctx.arg(1)?, ctx.arg(0)?)),
-            ArrayValueOp::All => Ok(format!("({} = ALL({}))", ctx.arg(1)?, ctx.arg(0)?)),
+    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<(), QueryError> {
+        let operator = match self.op {
+            ArrayValueOp::Any => " = ANY(",
+            ArrayValueOp::All => " = ALL(",
             ArrayValueOp::Position => Err(QueryError::BindError(
                 "array position is a scalar expression".to_string(),
-            )),
-        }
+            ))?,
+        };
+        ctx.push_sql("(");
+        ctx.push_arg(1)?;
+        ctx.push_sql(operator);
+        ctx.push_arg(0)?;
+        ctx.push_sql("))");
+        Ok(())
     }
 }

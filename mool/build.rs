@@ -1,4 +1,5 @@
 fn main() {
+    println!("cargo::rustc-check-cfg=cfg(mool_has_backend)");
     let backends = ["POSTGRES", "SQLITE", "MYSQL", "MARIADB"];
     let selected = backends
         .iter()
@@ -6,15 +7,14 @@ fn main() {
         .copied()
         .collect::<Vec<_>>();
 
-    match selected.as_slice() {
-        [_] => {}
-        [] => fail(
-            "Mool requires exactly one database backend feature: postgres, sqlite, mysql, or mariadb",
-        ),
-        _ => fail(&format!(
+    if selected.len() > 1 {
+        fail(&format!(
             "Mool database backend features are mutually exclusive; selected: {}",
             selected.join(", ").to_lowercase()
-        )),
+        ));
+    }
+    if selected.len() == 1 {
+        println!("cargo::rustc-cfg=mool_has_backend");
     }
 }
 

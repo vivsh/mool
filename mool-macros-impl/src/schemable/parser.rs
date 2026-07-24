@@ -1,40 +1,12 @@
 use darling::FromMeta;
-use syn::punctuated::Punctuated;
 use syn::{
-    Attribute, DeriveInput, Error, Expr, ExprArray, Fields, Lit, LitInt, LitStr, Meta, Result,
-    Token, Type, spanned::Spanned,
+    Attribute, DeriveInput, Error, Expr, ExprArray, Fields, Lit, LitStr, Meta, Result, Type,
+    spanned::Spanned,
 };
 
 // -------------------------------------------------------------------------------------
 // Namespace key allowlists (used only for better error messages; does not change acceptance)
 // -------------------------------------------------------------------------------------
-
-static VALIDATE_KEYS: &[&str] = &[
-    "enum_values",
-    "min_length",
-    "max_length",
-    "exact_length",
-    "pattern",
-    "email",
-    "url",
-    "uuid",
-    "phone_e164",
-    "ipv4",
-    "ipv6",
-    "date",
-    "datetime",
-    "min",
-    "max",
-    "exclusive_min",
-    "exclusive_max",
-    "multiple_of",
-    "min_items",
-    "max_items",
-    "unique_items",
-    "custom",
-    "custom_schema",
-    "delegate",
-];
 
 static COLUMN_KEYS: &[&str] = &[
     "name",
@@ -136,9 +108,7 @@ fn enforce_namespace(
 
         if !allowed.iter().any(|a| *a == key) {
             // "belongs to ..." hint (best-effort)
-            let hint = if VALIDATE_KEYS.contains(&key.as_str()) {
-                " (belongs to #[validate(...)] )"
-            } else if COLUMN_KEYS.contains(&key.as_str()) {
+            let hint = if COLUMN_KEYS.contains(&key.as_str()) {
                 " (belongs to #[column(...)] )"
             } else {
                 ""
@@ -151,27 +121,6 @@ fn enforce_namespace(
         }
     }
     Ok(())
-}
-
-fn parse_enum_attribute(meta: &Meta) -> darling::Result<Vec<Lit>> {
-    match meta {
-        Meta::List(list) => {
-            let nested = list
-                .parse_args_with(Punctuated::<Lit, Token![,]>::parse_terminated)
-                .map_err(darling::Error::from)?;
-            Ok(nested.into_iter().collect())
-        }
-        _ => Err(darling::Error::custom("Expected list or array for enum").with_span(meta)),
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct EnumWrapper(pub Vec<Lit>);
-
-impl FromMeta for EnumWrapper {
-    fn from_meta(item: &Meta) -> darling::Result<Self> {
-        parse_enum_attribute(item).map(EnumWrapper)
-    }
 }
 
 /// Reference specification for foreign key relationships
@@ -416,175 +365,6 @@ pub struct ContainerAttrs {
     pub foreign_keys: Vec<ForeignKeySpec>,
 }
 
-/// Field-level validation attributes from #[validate(...)]
-#[derive(Debug, Default, Clone, FromMeta)]
-pub struct ValidateAttrs {
-    #[darling(default, rename = "enum_values")]
-    pub enumeration: EnumWrapper,
-
-    #[darling(default)]
-    pub min_length: Option<LitInt>,
-    #[darling(default)]
-    pub max_length: Option<LitInt>,
-    #[darling(default)]
-    pub exact_length: Option<LitInt>,
-
-    #[darling(default)]
-    pub pattern: Option<LitStr>,
-
-    #[darling(default)]
-    pub email: bool,
-    #[darling(default)]
-    pub url: bool,
-    #[darling(default)]
-    pub uuid: bool,
-    #[darling(default)]
-    pub phone_e164: bool,
-    #[darling(default)]
-    pub ipv4: bool,
-    #[darling(default)]
-    pub ipv6: bool,
-    #[darling(default)]
-    pub date: bool,
-    #[darling(default)]
-    pub datetime: bool,
-
-    #[darling(default)]
-    pub min: Option<LitInt>,
-    #[darling(default)]
-    pub max: Option<LitInt>,
-    #[darling(default)]
-    pub exclusive_min: bool,
-    #[darling(default)]
-    pub exclusive_max: bool,
-    #[darling(default)]
-    pub multiple_of: Option<LitInt>,
-
-    #[darling(default)]
-    pub min_items: Option<LitInt>,
-    #[darling(default)]
-    pub max_items: Option<LitInt>,
-    #[darling(default)]
-    pub unique_items: bool,
-
-    #[darling(default)]
-    pub custom: Option<syn::Path>,
-    #[darling(default)]
-    pub custom_schema: Option<LitStr>,
-    #[darling(default)]
-    pub delegate: bool,
-}
-
-impl ValidateAttrs {
-    pub fn has_rules(&self) -> bool {
-        !self.enumeration.is_empty()
-            || self.min_length.is_some()
-            || self.max_length.is_some()
-            || self.exact_length.is_some()
-            || self.pattern.is_some()
-            || self.email
-            || self.url
-            || self.uuid
-            || self.phone_e164
-            || self.ipv4
-            || self.ipv6
-            || self.date
-            || self.datetime
-            || self.min.is_some()
-            || self.max.is_some()
-            || self.exclusive_min
-            || self.exclusive_max
-            || self.multiple_of.is_some()
-            || self.min_items.is_some()
-            || self.max_items.is_some()
-            || self.unique_items
-            || self.custom.is_some()
-            || self.custom_schema.is_some()
-            || self.delegate
-    }
-
-    pub fn validate(&self) -> Result<()> {
-        // Enforce mutually exclusive delegate and custom
-        if self.delegate && self.custom.is_some() {
-            return Err(Error::new(
-                proc_macro2::Span::call_site(),
-                "Cannot use both delegate and custom on the same field",
-            ));
-        }
-
-        if self.custom_schema.is_some() && self.custom.is_none() {
-            return Err(Error::new(
-                proc_macro2::Span::call_site(),
-                "custom_schema requires custom to be set",
-            ));
-        }
-
-        // Enforce mutually exclusive format flags
-        let format_flags = [
-            ("email", self.email),
-            ("url", self.url),
-            ("uuid", self.uuid),
-            ("phone_e164", self.phone_e164),
-            ("ipv4", self.ipv4),
-            ("ipv6", self.ipv6),
-            ("date", self.date),
-            ("datetime", self.datetime),
-        ];
-        let active: Vec<&str> = format_flags
-            .iter()
-            .filter(|(_, v)| *v)
-            .map(|(n, _)| *n)
-            .collect();
-        if active.len() > 1 {
-            return Err(Error::new(
-                proc_macro2::Span::call_site(),
-                format!("Cannot mix format validators: found {}", active.join(", ")),
-            ));
-        }
-
-        // Enforce exclusive_min requires min
-        if self.exclusive_min && self.min.is_none() {
-            return Err(Error::new(
-                proc_macro2::Span::call_site(),
-                "exclusive_min requires min to be set",
-            ));
-        }
-
-        // Enforce exclusive_max requires max
-        if self.exclusive_max && self.max.is_none() {
-            return Err(Error::new(
-                proc_macro2::Span::call_site(),
-                "exclusive_max requires max to be set",
-            ));
-        }
-
-        // Enforce exact_length is exclusive with min/max_length
-        if self.exact_length.is_some() && (self.min_length.is_some() || self.max_length.is_some()) {
-            return Err(Error::new(
-                proc_macro2::Span::call_site(),
-                "exact_length cannot be used with min_length or max_length",
-            ));
-        }
-
-        if let Some(multiple_of) = &self.multiple_of
-            && multiple_of.base10_parse::<i128>()? == 0
-        {
-            return Err(Error::new(
-                multiple_of.span(),
-                "multiple_of must not be zero",
-            ));
-        }
-
-        Ok(())
-    }
-}
-
-impl EnumWrapper {
-    fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
 /// Database column metadata from #[column(...)]
 #[derive(Debug, Default, Clone, FromMeta)]
 pub struct ColumnAttrs {
@@ -649,7 +429,6 @@ pub struct ColumnAttrs {
 pub struct FieldMeta {
     pub ident: Option<syn::Ident>,
     pub ty: Type,
-    pub validate: ValidateAttrs,
     pub column: ColumnAttrs,
 }
 
@@ -676,7 +455,6 @@ fn augment_darling_error(e: darling::Error, context: &str) -> syn::Error {
 
 impl FieldMeta {
     pub fn from_field(field: &syn::Field) -> Result<Self> {
-        let mut validate = ValidateAttrs::default();
         let mut column = ColumnAttrs::default();
 
         let field_name = field
@@ -686,19 +464,6 @@ impl FieldMeta {
             .unwrap_or_else(|| "<unnamed>".to_string());
 
         for attr in &field.attrs {
-            if let Some(nested) = parse_ns_list(attr, "validate")? {
-                enforce_namespace("validate", &nested, VALIDATE_KEYS)?;
-                validate = ValidateAttrs::from_list(&nested).map_err(|e| {
-                    augment_darling_error(
-                        e,
-                        &format!("Error decoding #[validate] on field '{field_name}'"),
-                    )
-                })?;
-                validate
-                    .validate()
-                    .map_err(|e| Error::new(attr.span(), e.to_string()))?;
-            }
-
             if let Some(nested) = parse_ns_list(attr, "column")? {
                 enforce_namespace("column", &nested, COLUMN_KEYS)?;
                 column = ColumnAttrs::from_list(&nested).map_err(|e| {
@@ -719,7 +484,6 @@ impl FieldMeta {
         Ok(Self {
             ident: field.ident.clone(),
             ty: field.ty.clone(),
-            validate,
             column,
         })
     }
@@ -732,17 +496,6 @@ impl ContainerAttrs {
             if let Some(nested) = parse_ns_list(attr, "table")? {
                 out = ContainerAttrs::from_list(&nested)
                     .map_err(|e| augment_darling_error(e, "Error decoding #[table]"))?;
-            }
-            if let Some(nested) = parse_ns_list(attr, "schema")? {
-                let legacy = ContainerAttrs::from_list(&nested)
-                    .map_err(|e| augment_darling_error(e, "Error decoding #[schema]"));
-                let legacy = legacy?;
-                if out.name.is_none() {
-                    out.name = legacy.name.or(legacy.table);
-                }
-                if out.schema.is_none() {
-                    out.schema = legacy.schema;
-                }
             }
         }
         Ok(out)
@@ -791,8 +544,7 @@ impl ParsedStruct {
             },
             _ => return Err(Error::new_spanned(ident, "only structs are supported")),
         };
-        let _has_validation_rules = fields.iter().any(|field| field.validate.has_rules());
-
+        validate_semantics(&container, &fields, &ident)?;
         Ok(Self {
             ident,
             generics,
@@ -802,59 +554,307 @@ impl ParsedStruct {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use syn::parse_quote;
+fn validate_semantics(
+    container: &ContainerAttrs,
+    fields: &[FieldMeta],
+    ident: &syn::Ident,
+) -> Result<()> {
+    validate_container_identifiers(container, ident)?;
+    validate_fields(fields)?;
+    validate_table_constraints(container, fields, ident)
+}
 
-    /// Verifies schemable attribute parsing for `validate custom schema requires custom`.
-    #[test]
-    fn validate_custom_schema_requires_custom() {
-        let input: DeriveInput = parse_quote! {
-            struct Test {
-                #[validate(custom_schema = "slug")]
-                field: String,
-            }
-        };
-        let result = ParsedStruct::from_derive_input(input);
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "custom_schema requires custom to be set"
-        );
+fn validate_container_identifiers(container: &ContainerAttrs, ident: &syn::Ident) -> Result<()> {
+    for value in [
+        container.name.as_ref(),
+        container.table.as_ref(),
+        container.schema.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        validate_identifier(&value.value(), value.span())?;
     }
+    let table_name = container.name.as_ref().or(container.table.as_ref());
+    if container.name.is_some() && container.table.is_some() {
+        return Err(Error::new_spanned(
+            ident,
+            "table name cannot be specified twice",
+        ));
+    }
+    if table_name.is_none() {
+        validate_identifier(&to_snake_case(&ident.to_string()), ident.span())?;
+    }
+    Ok(())
+}
 
-    /// Verifies schemable attribute parsing for `validate custom schema with custom`.
-    #[test]
-    fn validate_custom_schema_with_custom() {
-        let input: DeriveInput = parse_quote! {
-            struct Test {
-                #[validate(custom = "validate_field", custom_schema = "slug")]
-                field: String,
+fn validate_fields(fields: &[FieldMeta]) -> Result<()> {
+    let mut columns = std::collections::HashSet::new();
+    let mut relations = std::collections::HashSet::new();
+    for field in fields {
+        validate_field_flags(field)?;
+        validate_field_names(field)?;
+        if is_physical_column(field) {
+            let name = effective_column_name(field);
+            if !columns.insert(name.clone()) {
+                return Err(Error::new(
+                    field_span(field),
+                    format!("duplicate column '{name}'"),
+                ));
             }
-        };
-        let parsed = ParsedStruct::from_derive_input(input).unwrap();
-        let field = &parsed.fields[0];
-        assert_eq!(
-            field.validate.custom_schema.as_ref().unwrap().value(),
-            "slug"
-        );
+        }
+        if is_relation_field(field) {
+            let name = field
+                .ident
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_default();
+            if !relations.insert(name.clone()) {
+                return Err(Error::new(
+                    field_span(field),
+                    format!("duplicate relation alias '{name}'"),
+                ));
+            }
+        }
     }
+    Ok(())
+}
 
-    /// Verifies schemable attribute parsing for `validate multiple of zero fails`.
-    #[test]
-    fn validate_multiple_of_zero_fails() {
-        let input: DeriveInput = parse_quote! {
-            struct Test {
-                #[validate(multiple_of = 0)]
-                field: i32,
-            }
-        };
-        let result = ParsedStruct::from_derive_input(input);
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "multiple_of must not be zero"
-        );
+/// Rejects write-policy and relation combinations with contradictory behavior.
+fn validate_field_flags(field: &FieldMeta) -> Result<()> {
+    let column = &field.column;
+    validate_field_storage_flags(field)?;
+    if column.read_only && (column.insertable == Some(true) || column.updatable == Some(true)) {
+        return Err(Error::new(
+            field_span(field),
+            "read_only cannot be insertable or updatable",
+        ));
     }
+    if column.skip_bind && (column.insertable == Some(true) || column.updatable == Some(true)) {
+        return Err(Error::new(
+            field_span(field),
+            "skip_bind cannot be insertable or updatable",
+        ));
+    }
+    let relation_count = usize::from(column.reference.is_some())
+        + usize::from(column.backref.is_some())
+        + usize::from(column.prefetch.is_some());
+    if relation_count > 1 {
+        return Err(Error::new(
+            field_span(field),
+            "reference, backref, and prefetch are mutually exclusive",
+        ));
+    }
+    validate_reference_spec(field)
+}
+
+/// Rejects storage metadata that cannot describe one physical column safely.
+fn validate_field_storage_flags(field: &FieldMeta) -> Result<()> {
+    let column = &field.column;
+    if column.skip
+        && (column.primary_key
+            || column.flatten
+            || column.reference.is_some()
+            || column.backref.is_some()
+            || column.prefetch.is_some())
+    {
+        return Err(Error::new(
+            field_span(field),
+            "skip cannot be combined with primary-key or relation metadata",
+        ));
+    }
+    if column.primary_key && column.nullable == Some(true) {
+        return Err(Error::new(
+            field_span(field),
+            "primary-key columns cannot be nullable",
+        ));
+    }
+    if column.json && column.sql_enum {
+        return Err(Error::new(
+            field_span(field),
+            "json and sql_enum storage are mutually exclusive",
+        ));
+    }
+    if column.flatten
+        && (column.name.is_some() || column.sql_type.is_some() || column.json || column.sql_enum)
+    {
+        return Err(Error::new(
+            field_span(field),
+            "flatten cannot define column storage metadata",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_field_names(field: &FieldMeta) -> Result<()> {
+    if let Some(name) = &field.column.name {
+        validate_identifier(&name.value(), name.span())?;
+    }
+    for name in [
+        field.column.index_name.as_ref(),
+        field.column.unique_name.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        validate_identifier(&name.value(), name.span())?;
+    }
+    Ok(())
+}
+
+fn validate_reference_spec(field: &FieldMeta) -> Result<()> {
+    let Some(reference) = &field.column.reference else {
+        return Ok(());
+    };
+    if let Some(target) = &reference.target {
+        let Some((table, column)) = target.rsplit_once('.') else {
+            return Err(Error::new(
+                field_span(field),
+                "reference target must be 'table.column'",
+            ));
+        };
+        validate_qualified_identifier(table, field_span(field))?;
+        validate_identifier(column, field_span(field))?;
+    } else if reference.relation.is_none() && reference.on.is_empty() && reference.from.is_none() {
+        return Err(Error::new(
+            field_span(field),
+            "join reference requires from, on(...), or a relation marker",
+        ));
+    }
+    if let Some(join) = &reference.join
+        && !matches!(join.as_str(), "inner" | "left")
+    {
+        return Err(Error::new(
+            field_span(field),
+            "reference join must be 'inner' or 'left'",
+        ));
+    }
+    for join in &reference.on {
+        validate_qualified_identifier(&join.from, field_span(field))?;
+        validate_identifier(&join.to, field_span(field))?;
+    }
+    Ok(())
+}
+
+fn validate_table_constraints(
+    container: &ContainerAttrs,
+    fields: &[FieldMeta],
+    ident: &syn::Ident,
+) -> Result<()> {
+    let columns = fields
+        .iter()
+        .filter(|field| is_physical_column(field))
+        .map(effective_column_name)
+        .collect::<std::collections::HashSet<_>>();
+    if let Some(primary_key) = &container.primary_key {
+        validate_constraint_columns(
+            "primary key",
+            primary_key.columns.iter(),
+            &columns,
+            ident.span(),
+        )?;
+        if let Some(name) = &primary_key.name {
+            validate_identifier(name, ident.span())?;
+        }
+    }
+    for foreign_key in &container.foreign_keys {
+        validate_foreign_key(foreign_key, &columns, ident.span())?;
+    }
+    Ok(())
+}
+
+fn validate_foreign_key(
+    foreign_key: &ForeignKeySpec,
+    columns: &std::collections::HashSet<String>,
+    span: proc_macro2::Span,
+) -> Result<()> {
+    validate_constraint_columns("foreign key", foreign_key.columns.iter(), columns, span)?;
+    if foreign_key.columns.len() != foreign_key.references.columns.len() {
+        return Err(Error::new(
+            span,
+            "foreign-key source and target arity must match",
+        ));
+    }
+    validate_qualified_identifier(&foreign_key.references.table, span)?;
+    for column in foreign_key.references.columns.iter() {
+        validate_identifier(column, span)?;
+    }
+    if let Some(name) = &foreign_key.name {
+        validate_identifier(name, span)?;
+    }
+    Ok(())
+}
+
+fn validate_constraint_columns<'a>(
+    label: &str,
+    columns: impl Iterator<Item = &'a String>,
+    known: &std::collections::HashSet<String>,
+    span: proc_macro2::Span,
+) -> Result<()> {
+    let columns = columns.collect::<Vec<_>>();
+    if columns.is_empty() {
+        return Err(Error::new(
+            span,
+            format!("{label} requires at least one column"),
+        ));
+    }
+    for column in columns {
+        validate_identifier(column, span)?;
+        if !known.contains(column) {
+            return Err(Error::new(
+                span,
+                format!("{label} references unknown column '{column}'"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_qualified_identifier(value: &str, span: proc_macro2::Span) -> Result<()> {
+    for part in value.split('.') {
+        validate_identifier(part, span)?;
+    }
+    Ok(())
+}
+
+fn validate_identifier(value: &str, span: proc_macro2::Span) -> Result<()> {
+    let mut chars = value.chars();
+    let valid_start = chars
+        .next()
+        .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_');
+    if valid_start && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_') {
+        return Ok(());
+    }
+    Err(Error::new(
+        span,
+        format!("invalid SQL identifier '{value}'"),
+    ))
+}
+
+fn effective_column_name(field: &FieldMeta) -> String {
+    field
+        .column
+        .name
+        .as_ref()
+        .map(LitStr::value)
+        .or_else(|| field.ident.as_ref().map(ToString::to_string))
+        .unwrap_or_default()
+}
+
+fn is_physical_column(field: &FieldMeta) -> bool {
+    !field.column.skip && !field.column.flatten && field.column.prefetch.is_none()
+}
+
+fn is_relation_field(field: &FieldMeta) -> bool {
+    field.column.reference.is_some()
+        || field.column.backref.is_some()
+        || field.column.prefetch.is_some()
+}
+
+fn field_span(field: &FieldMeta) -> proc_macro2::Span {
+    field
+        .ident
+        .as_ref()
+        .map(syn::Ident::span)
+        .unwrap_or_else(|| field.ty.span())
 }

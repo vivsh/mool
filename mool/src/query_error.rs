@@ -18,6 +18,20 @@ pub enum QueryError {
         reference: &'static str,
         field: &'static str,
     },
+    #[error("{feature} is not supported for {dialect}")]
+    Unsupported {
+        dialect: &'static str,
+        feature: &'static str,
+    },
+    #[error("{rust_type} duration must be exactly representable in milliseconds")]
+    DateTimePrecision { rust_type: &'static str },
+    #[error("{rust_type} duration exceeds the supported SQL range")]
+    DateTimeOverflow { rust_type: &'static str },
+    #[error("invalid datetime operation '{operation}': {reason}")]
+    InvalidDateTime {
+        operation: &'static str,
+        reason: &'static str,
+    },
     #[error("unsupported filter operator '{0}' for this value")]
     UnsupportedFilter(&'static str),
     #[error("placeholder error: {0}")]
@@ -61,6 +75,8 @@ pub enum QueryError {
     DuplicateBatchKey { first: usize, duplicate: usize },
     #[error("batch column lengths differ: expected {expected}, got {got}")]
     MismatchedBatchColumns { expected: usize, got: usize },
+    #[error("pagination offset overflow for page {page} and per_page {per_page}")]
+    PaginationOverflow { page: usize, per_page: usize },
 }
 
 /// Row locking mode for SELECT ... FOR UPDATE / FOR SHARE.

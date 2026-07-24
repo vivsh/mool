@@ -43,8 +43,8 @@ where
         let mode = self.inner.mode();
         let mut statements = Vec::with_capacity(ranges.len());
         for range in ranges {
-            let (plan, _) = self.inner.scope.plan_batch_unnest_with_args(
-                &self.inner.rows[range.clone()],
+            let plan = self.inner.scope.plan_batch_unnest::<T>(
+                range.len(),
                 Dialect::active(),
                 &mode,
                 None,
@@ -321,8 +321,8 @@ where
         let mode = self.inner.mode();
         let mut statements = Vec::with_capacity(ranges.len());
         for range in ranges {
-            let (plan, _) = self.inner.returning.plan_batch_unnest(
-                &self.inner.rows[range.clone()],
+            let plan = self.inner.returning.plan_batch_unnest_shape::<T>(
+                range.len(),
                 &mode,
                 Dialect::active(),
             )?;
@@ -433,12 +433,10 @@ where
     let mode = batch.mode();
     let mut statements = Vec::with_capacity(ranges.len());
     for range in ranges {
-        let (plan, _) = batch.scope.plan_batch_unnest_with_args(
-            &batch.rows[range.clone()],
-            Dialect::active(),
-            &mode,
-            None,
-        )?;
+        let plan =
+            batch
+                .scope
+                .plan_batch_unnest::<T>(range.len(), Dialect::active(), &mode, None)?;
         statements.push(BatchStatementPlan::new(plan, range));
     }
     Ok(BatchPlan::new(statements))
@@ -459,11 +457,10 @@ where
     let mode = batch.mode();
     let mut statements = Vec::with_capacity(ranges.len());
     for range in ranges {
-        let (plan, _) = batch.returning.plan_batch_unnest(
-            &batch.rows[range.clone()],
-            &mode,
-            Dialect::active(),
-        )?;
+        let plan =
+            batch
+                .returning
+                .plan_batch_unnest_shape::<T>(range.len(), &mode, Dialect::active())?;
         statements.push(BatchStatementPlan::new(plan, range));
     }
     Ok(BatchPlan::new(statements))

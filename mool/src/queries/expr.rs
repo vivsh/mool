@@ -131,8 +131,7 @@ impl<T> Expr<T> {
     }
 
     /// Adds two typed expressions.
-    #[allow(clippy::should_implement_trait)]
-    pub fn add<R>(self, rhs: R) -> Self
+    pub fn plus<R>(self, rhs: R) -> Self
     where
         R: IntoExpr<T>,
     {
@@ -144,8 +143,7 @@ impl<T> Expr<T> {
     }
 
     /// Subtracts one typed expression from another.
-    #[allow(clippy::should_implement_trait)]
-    pub fn sub<R>(self, rhs: R) -> Self
+    pub fn minus<R>(self, rhs: R) -> Self
     where
         R: IntoExpr<T>,
     {
@@ -153,8 +151,7 @@ impl<T> Expr<T> {
     }
 
     /// Multiplies two typed expressions.
-    #[allow(clippy::should_implement_trait)]
-    pub fn mul<R>(self, rhs: R) -> Self
+    pub fn times<R>(self, rhs: R) -> Self
     where
         R: IntoExpr<T>,
     {
@@ -162,8 +159,7 @@ impl<T> Expr<T> {
     }
 
     /// Divides one typed expression by another.
-    #[allow(clippy::should_implement_trait)]
-    pub fn div<R>(self, rhs: R) -> Self
+    pub fn divide_by<R>(self, rhs: R) -> Self
     where
         R: IntoExpr<T>,
     {
@@ -490,8 +486,7 @@ impl Predicate {
     }
 
     /// Negates this predicate with SQL `NOT`.
-    #[allow(clippy::should_implement_trait)]
-    pub fn not(self) -> Self {
+    pub fn negated(self) -> Self {
         std::ops::Not::not(self)
     }
 

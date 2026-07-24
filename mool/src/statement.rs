@@ -1,4 +1,3 @@
-use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::QueryError;
@@ -37,9 +36,8 @@ impl Statement {
         }
     }
 
-    /// Builds a statement with no arguments.
-    #[allow(clippy::should_implement_trait)]
-    pub fn from_str(sql: &str) -> Self {
+    /// Builds an explicitly raw statement with no arguments.
+    pub fn raw(sql: &str) -> Self {
         Self {
             sql: sql.to_string(),
             args: Arguments::default(),
@@ -63,17 +61,5 @@ impl Statement {
             return Err(QueryError::BindError(err.to_string()));
         }
         Ok((self.sql, self.args))
-    }
-}
-
-impl FromStr for Statement {
-    type Err = std::convert::Infallible;
-
-    fn from_str(sql: &str) -> Result<Self, Self::Err> {
-        Ok(Self {
-            sql: sql.to_string(),
-            args: Arguments::default(),
-            error: None,
-        })
     }
 }

@@ -129,13 +129,19 @@ fn int_impl(parsed: &ParsedSqlEnum, crate_path: &TokenStream) -> TokenStream {
         .iter()
         .map(|variant| &variant.ident)
         .collect::<Vec<_>>();
-    let codes = parsed
+    let Some(codes) = parsed
         .variants
         .iter()
         .map(|variant| {
-            typed_int_literal(variant.code.expect("validated int enum code"), parsed.repr)
+            variant
+                .code
+                .map(|code| typed_int_literal(code, parsed.repr))
         })
-        .collect::<Vec<_>>();
+        .collect::<Option<Vec<_>>>()
+    else {
+        return syn::Error::new_spanned(ident, "integer SQL enums require a code per variant")
+            .to_compile_error();
+    };
     quote! {
         impl #ident {
             pub const SQL_CODES: &'static [#repr] = &[#(#codes as #repr),*];

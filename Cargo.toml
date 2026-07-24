@@ -16,7 +16,7 @@ documentation = "https://docs.rs/mool"
 [workspace.dependencies]
 chrono = { version = "0.4.41", features = ["serde"] }
 darling = "0.20"
-gaman = { version = "0.3.22", path = "../gaman", default-features = false, features = ["native"] }
+gaman = { version = "0.3.22", default-features = false, features = ["native"] }
 heck = "0.4"
 indexmap = { version = "2.10.0", features = ["serde"] }
 proc-macro2 = "1"
@@ -26,8 +26,8 @@ serde = { version = "1.0.219", features = ["derive", "rc", "serde_derive"] }
 serde_json = { version = "1.0.140", features = ["indexmap", "raw_value", "preserve_order"] }
 sqlx = { version = "^0.8.6", default-features = false, features = ["chrono", "runtime-tokio", "uuid", "json", "derive"] }
 syn = { version = "2", features = ["full"] }
+time = { version = "0.3", features = ["serde"] }
 thiserror = "2.0.12"
 tokio = { version = "1.46.1", features = ["full"] }
 twox-hash = "1.6"
 url = "2.5.4"
-uuid = { version = "1.17.0", features = ["v4", "v7", "serde"] }

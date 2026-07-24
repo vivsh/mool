@@ -375,7 +375,24 @@ impl Renderer {
     ) -> Result<String, QueryError> {
         let mut sql = String::new();
         self.render_with(scope, &mut sql)?;
+        if !scope.groups.is_empty() || !scope.having.is_empty() {
+            sql.push_str("SELECT COUNT(*) FROM (");
+            sql.push_str(&self.render_grouped_count_source(scope, model)?);
+            sql.push_str(") __mool_count");
+            return Ok(sql);
+        }
         sql.push_str("SELECT COUNT(*)");
+        self.render_from(model, &mut sql)?;
+        self.render_filters(scope, RenderMode::Select(model), &mut sql)?;
+        Ok(sql)
+    }
+
+    fn render_grouped_count_source(
+        &mut self,
+        scope: &QueryScope,
+        model: &SelectModel,
+    ) -> Result<String, QueryError> {
+        let mut sql = String::from("SELECT 1");
         self.render_from(model, &mut sql)?;
         self.render_filters(scope, RenderMode::Select(model), &mut sql)?;
         self.render_groups(scope, RenderMode::Select(model), &mut sql)?;
@@ -393,6 +410,8 @@ impl Renderer {
         sql.push_str("SELECT EXISTS(SELECT 1");
         self.render_from(model, &mut sql)?;
         self.render_filters(scope, RenderMode::Select(model), &mut sql)?;
+        self.render_groups(scope, RenderMode::Select(model), &mut sql)?;
+        self.render_having(scope, RenderMode::Select(model), &mut sql)?;
         sql.push(')');
         Ok(sql)
     }
@@ -412,6 +431,8 @@ impl Renderer {
         self.render_filters(scope, RenderMode::Select(model), &mut sql)?;
         self.render_groups(scope, RenderMode::Select(model), &mut sql)?;
         self.render_having(scope, RenderMode::Select(model), &mut sql)?;
+        self.render_orders(scope, RenderMode::Select(model), &mut sql)?;
+        sql.push_str(" LIMIT 1");
         Ok(sql)
     }
 

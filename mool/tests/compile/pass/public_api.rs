@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use mool as db;
 use mool::Model;
 
@@ -72,7 +70,7 @@ impl db::Backref for PostComments {
             table_name: "posts",
             table_schema: None,
             columns: &[db::JoinColumn {
-                from: "post.id",
+                from: "posts.id",
                 to: "author_id",
             }],
             join_type: db::JoinType::Inner,

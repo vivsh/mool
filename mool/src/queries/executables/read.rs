@@ -7,7 +7,7 @@ use crate::placeholders::Dialect;
 
 use super::super::binds::statement_from_plan;
 use super::super::expr::IntoExpr;
-use super::super::output::{HasOutputCols, IntoOutputTarget, ReadUsing, select_assignment};
+use super::super::output::{HasOutputCols, IntoOutputTarget, select_assignment};
 use super::super::plan::QueryPlan;
 use super::super::set::{Set, SetOp};
 use super::super::source::{Cte, Subquery};
@@ -27,17 +27,6 @@ where
         self.scope
             .output_assignments
             .push(select_assignment(target, expr));
-        self
-    }
-
-    /// Adds computed expressions to the selected output projection.
-    #[doc(hidden)]
-    pub fn using<F>(mut self, f: F) -> Self
-    where
-        T: HasOutputCols,
-        F: FnOnce(ReadUsing<T>) -> ReadUsing<T>,
-    {
-        self.scope.output_assignments = f(ReadUsing::new()).into_selects().assignments;
         self
     }
 
@@ -62,7 +51,7 @@ where
     }
 
     /// Converts this select executable into a CTE source.
-    pub fn cte(self) -> Result<Cte<T>, QueryError>
+    pub fn cte(self) -> Cte<T>
     where
         T: Projectable + 'static,
     {
@@ -71,7 +60,7 @@ where
 
     /// Converts this select executable into a named CTE source.
     #[doc(hidden)]
-    pub fn cte_as(self, name: &str) -> Result<Cte<T>, QueryError>
+    pub fn cte_as(self, name: &str) -> Cte<T>
     where
         T: Projectable + 'static,
     {
@@ -79,7 +68,7 @@ where
     }
 
     /// Converts this select executable into a subquery source.
-    pub fn subquery(self) -> Result<Subquery<T>, QueryError>
+    pub fn subquery(self) -> Subquery<T>
     where
         T: Projectable + 'static,
     {
@@ -88,7 +77,7 @@ where
 
     /// Converts this select executable into a named subquery source.
     #[doc(hidden)]
-    pub fn subquery_as(self, name: &str) -> Result<Subquery<T>, QueryError>
+    pub fn subquery_as(self, name: &str) -> Subquery<T>
     where
         T: Projectable + 'static,
     {
@@ -118,17 +107,6 @@ where
         self.scope
             .output_assignments
             .push(select_assignment(target, expr));
-        self
-    }
-
-    /// Adds computed expressions to the selected output projection.
-    #[doc(hidden)]
-    pub fn using<F>(mut self, f: F) -> Self
-    where
-        T: HasOutputCols,
-        F: FnOnce(ReadUsing<T>) -> ReadUsing<T>,
-    {
-        self.scope.output_assignments = f(ReadUsing::new()).into_selects().assignments;
         self
     }
 
@@ -175,17 +153,6 @@ where
         self
     }
 
-    /// Adds computed expressions to the selected output projection.
-    #[doc(hidden)]
-    pub fn using<F>(mut self, f: F) -> Self
-    where
-        T: HasOutputCols,
-        F: FnOnce(ReadUsing<T>) -> ReadUsing<T>,
-    {
-        self.scope.output_assignments = f(ReadUsing::new()).into_selects().assignments;
-        self
-    }
-
     /// Renders SQL and parameter metadata without executing the query.
     pub fn plan(&self) -> Result<QueryPlan, QueryError> {
         self.scope.plan_first::<T>(Dialect::active())
@@ -217,17 +184,6 @@ where
         self
     }
 
-    /// Adds computed expressions to the selected output projection.
-    #[doc(hidden)]
-    pub fn using<F>(mut self, f: F) -> Self
-    where
-        T: HasOutputCols,
-        F: FnOnce(ReadUsing<T>) -> ReadUsing<T>,
-    {
-        self.scope.output_assignments = f(ReadUsing::new()).into_selects().assignments;
-        self
-    }
-
     /// Renders SQL and parameter metadata without executing the query.
     pub fn plan(&self) -> Result<QueryPlan, QueryError> {
         self.scope
@@ -235,7 +191,7 @@ where
     }
 
     /// Converts this limited select executable into a CTE source.
-    pub fn cte(self) -> Result<Cte<T>, QueryError>
+    pub fn cte(self) -> Cte<T>
     where
         T: Projectable + 'static,
     {
@@ -246,7 +202,7 @@ where
     }
 
     /// Converts this limited select executable into a subquery source.
-    pub fn subquery(self) -> Result<Subquery<T>, QueryError>
+    pub fn subquery(self) -> Subquery<T>
     where
         T: Projectable,
     {

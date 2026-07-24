@@ -1,0 +1,10 @@
+error: cannot find attribute `schema` in this scope
+ --> tests/compile/fail/legacy_schema_attribute.rs:4:3
+  |
+4 | #[schema(name = "legacy_rows")]
+  |   ^^^^^^
+  |
+help: the derive macros `JsonSchema` and `JsonSchema_repr` accept the similarly named `schemars` attribute
+  |
+4 | #[schemars(name = "legacy_rows")]
+  |         ++

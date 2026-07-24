@@ -83,7 +83,12 @@ where
         self.args.clone()
     }
 
-    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError> {
-        Ok(format!("CAST({} AS {})", ctx.arg(0)?, T::SQL_TYPE))
+    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<(), QueryError> {
+        ctx.push_sql("CAST(");
+        ctx.push_arg(0)?;
+        ctx.push_sql(" AS ");
+        ctx.push_sql(T::SQL_TYPE);
+        ctx.push_sql(")");
+        Ok(())
     }
 }

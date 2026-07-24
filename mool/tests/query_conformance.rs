@@ -1,6 +1,6 @@
 #![cfg(feature = "postgres")]
 
-mod common;
+pub mod common;
 
 use common::{
     BindMeta, EnumPost, EnumPostFilter, JsonPost, LowerTitle, MysqlPostStatus, NativeEnumPost,
@@ -40,7 +40,7 @@ fn read_golden_query_covers_projection_filters_grouping_and_binds() {
 
     assert_plan(
         &plan,
-        "SELECT post.author_id AS author_id, COUNT(post.id) AS post_count, COALESCE(AVG(post.id), $1) AS avg_id FROM posts post WHERE (post.published = $2) AND (post.title LIKE $3) AND post.id IN ($4, $5, $6) GROUP BY post.author_id HAVING (COUNT(post.id) > $7) ORDER BY post.author_id ASC",
+        "SELECT posts.author_id AS author_id, COUNT(posts.id) AS post_count, COALESCE(AVG(posts.id), $1) AS avg_id FROM posts WHERE (posts.published = $2) AND (posts.title LIKE $3) AND posts.id IN ($4, $5, $6) GROUP BY posts.author_id HAVING (COUNT(posts.id) > $7) ORDER BY posts.author_id ASC",
         BindMeta::new(0, 7, 7),
     );
     assert_param(&plan, "__typed_1", ParamSource::Val, 1, &[1]);
@@ -55,12 +55,12 @@ fn read_terminal_golden_queries_cover_limits_aggregates_and_windows() {
 
     assert_plan(
         &db::from(&post).one::<Post>().plan().unwrap(),
-        "SELECT post.id, post.author_id, post.title, post.published, post.created_at, post.subtitle FROM posts post LIMIT 2 OFFSET 0",
+        "SELECT posts.id, posts.author_id, posts.title, posts.published, posts.created_at, posts.subtitle FROM posts LIMIT 2 OFFSET 0",
         BindMeta::new(0, 0, 0),
     );
     assert_plan(
         &db::from(&post).first::<Post>().plan().unwrap(),
-        "SELECT post.id, post.author_id, post.title, post.published, post.created_at, post.subtitle FROM posts post LIMIT 1 OFFSET 0",
+        "SELECT posts.id, posts.author_id, posts.title, posts.published, posts.created_at, posts.subtitle FROM posts LIMIT 1 OFFSET 0",
         BindMeta::new(0, 0, 0),
     );
     assert_plan(
@@ -69,7 +69,7 @@ fn read_terminal_golden_queries_cover_limits_aggregates_and_windows() {
             .count()
             .plan()
             .unwrap(),
-        "SELECT COUNT(*) FROM posts post WHERE (post.published = $1)",
+        "SELECT COUNT(*) FROM posts WHERE (posts.published = $1)",
         BindMeta::new(0, 1, 1),
     );
     assert_plan(
@@ -78,7 +78,7 @@ fn read_terminal_golden_queries_cover_limits_aggregates_and_windows() {
             .exists()
             .plan()
             .unwrap(),
-        "SELECT EXISTS(SELECT 1 FROM posts post WHERE (post.published = $1))",
+        "SELECT EXISTS(SELECT 1 FROM posts WHERE (posts.published = $1))",
         BindMeta::new(0, 1, 1),
     );
     assert_plan(
@@ -86,7 +86,7 @@ fn read_terminal_golden_queries_cover_limits_aggregates_and_windows() {
             .scalar(db::funcs::max(post.id.clone()))
             .plan()
             .unwrap(),
-        "SELECT MAX(post.id) FROM posts post",
+        "SELECT MAX(posts.id) FROM posts LIMIT 1",
         BindMeta::new(0, 0, 0),
     );
 
@@ -105,7 +105,45 @@ fn read_terminal_golden_queries_cover_limits_aggregates_and_windows() {
             .set(&out.rank, db::funcs::rank().over(window))
             .plan()
             .unwrap(),
-        "SELECT post.id AS id, ROW_NUMBER() OVER (PARTITION BY post.author_id ORDER BY post.id ASC) AS row_number, RANK() OVER (PARTITION BY post.author_id ORDER BY post.id ASC) AS rank FROM posts post",
+        "SELECT posts.id AS id, ROW_NUMBER() OVER (PARTITION BY posts.author_id ORDER BY posts.id ASC) AS row_number, RANK() OVER (PARTITION BY posts.author_id ORDER BY posts.id ASC) AS rank FROM posts",
+        BindMeta::new(0, 0, 0),
+    );
+}
+
+/// Verifies grouped aggregate terminals preserve grouping semantics in their inner query.
+#[test]
+fn grouped_terminals_preserve_group_by_and_having() {
+    let posts = Post::table();
+    let scope = db::from(&posts)
+        .filter(posts.published.eq(db::val(true)))
+        .group_by(posts.author_id.clone())
+        .having(db::funcs::count(posts.id.clone()).gt(db::val(1_i64)));
+
+    assert_plan(
+        &scope.clone().count().plan().expect("grouped count"),
+        "SELECT COUNT(*) FROM (SELECT 1 FROM posts WHERE (posts.published = $1) GROUP BY posts.author_id HAVING (COUNT(posts.id) > $2)) __mool_count",
+        BindMeta::new(0, 2, 2),
+    );
+    assert_plan(
+        &scope.exists().plan().expect("grouped exists"),
+        "SELECT EXISTS(SELECT 1 FROM posts WHERE (posts.published = $1) GROUP BY posts.author_id HAVING (COUNT(posts.id) > $2))",
+        BindMeta::new(0, 2, 2),
+    );
+}
+
+/// Verifies scalar queries retain ordering and select only the first scalar row.
+#[test]
+fn scalar_terminal_preserves_ordering_and_limits_one_row() {
+    let posts = Post::table();
+    let plan = db::from(&posts)
+        .order_by(posts.id.desc())
+        .scalar(posts.title.clone())
+        .plan()
+        .expect("ordered scalar");
+
+    assert_plan(
+        &plan,
+        "SELECT posts.title FROM posts ORDER BY posts.id DESC LIMIT 1",
         BindMeta::new(0, 0, 0),
     );
 }
@@ -124,7 +162,7 @@ fn dialect_matrix_covers_placeholders_variable_reuse_and_unsupported_features() 
         .unwrap();
     assert_plan(
         &pg,
-        "SELECT post.id, post.author_id, post.title, post.published, post.created_at, post.subtitle FROM posts post WHERE ((post.id >= $1) AND (post.author_id = $1))",
+        "SELECT posts.id, posts.author_id, posts.title, posts.published, posts.created_at, posts.subtitle FROM posts WHERE ((posts.id >= $1) AND (posts.author_id = $1))",
         BindMeta::new(0, 1, 1),
     );
     assert_param(&pg, "id", ParamSource::Var, 1, &[1, 1]);
@@ -164,12 +202,11 @@ fn write_golden_queries_cover_mutations_upserts_and_returning() {
     assert_plan(
         &db::from(&post)
             .filter(post.id.eq(db::val(1_i64)))
-            .update_using(|w| {
-                w.set(
-                    &post.title,
-                    db::funcs::coalesce(post.title.clone(), db::val("untitled".to_string())),
-                )
-            })
+            .update(&patch)
+            .set(
+                &post.title,
+                db::funcs::coalesce(post.title.clone(), db::val("untitled".to_string())),
+            )
             .plan()
             .unwrap(),
         "UPDATE posts SET title = COALESCE(title, $1) WHERE (id = $2)",
@@ -214,7 +251,7 @@ fn source_golden_queries_cover_tables_ctes_subqueries_and_sets() {
     let account = common::Account::table();
     assert_plan(
         &db::from(&account).all::<common::Account>().plan().unwrap(),
-        "SELECT account.id, account.email_address, account.nickname FROM auth.accounts account",
+        "SELECT accounts.id, accounts.email_address, accounts.nickname FROM auth.accounts",
         BindMeta::new(0, 0, 0),
     );
 
@@ -222,8 +259,7 @@ fn source_golden_queries_cover_tables_ctes_subqueries_and_sets() {
     let subquery = db::from(&post)
         .filter(post.published.eq(db::val(true)))
         .all::<PostSummary>()
-        .subquery_as("published_posts")
-        .unwrap();
+        .subquery_as("published_posts");
     let cols = subquery.cols();
     assert_plan(
         &db::from(&subquery)
@@ -231,15 +267,14 @@ fn source_golden_queries_cover_tables_ctes_subqueries_and_sets() {
             .all::<PostSummary>()
             .plan()
             .unwrap(),
-        "SELECT published_posts.id, published_posts.title FROM (SELECT post.id, post.title FROM posts post WHERE (post.published = $1)) published_posts WHERE (published_posts.id > $2)",
+        "SELECT published_posts.id, published_posts.title FROM (SELECT posts.id, posts.title FROM posts WHERE (posts.published = $1)) published_posts WHERE (published_posts.id > $2)",
         BindMeta::new(0, 2, 2),
     );
 
     let cte = db::from(&post)
         .filter(post.published.eq(db::val(true)))
         .all::<PostSummary>()
-        .cte_as("published_posts")
-        .unwrap();
+        .cte_as("published_posts");
     let cols = cte.cols();
     assert_plan(
         &db::from(&cte)
@@ -248,7 +283,7 @@ fn source_golden_queries_cover_tables_ctes_subqueries_and_sets() {
             .all::<PostSummary>()
             .plan()
             .unwrap(),
-        "WITH published_posts AS (SELECT post.id, post.title FROM posts post WHERE (post.published = $1)) SELECT published_posts.id, published_posts.title FROM published_posts WHERE (published_posts.id > $2)",
+        "WITH published_posts AS (SELECT posts.id, posts.title FROM posts WHERE (posts.published = $1)) SELECT published_posts.id, published_posts.title FROM published_posts WHERE (published_posts.id > $2)",
         BindMeta::new(0, 2, 2),
     );
 
@@ -260,9 +295,33 @@ fn source_golden_queries_cover_tables_ctes_subqueries_and_sets() {
         .all::<PostSummary>();
     assert_plan(
         &left.union_all(right).plan().unwrap(),
-        "SELECT post.id, post.title FROM posts post WHERE (post.published = $1) UNION ALL SELECT post.id, post.title FROM posts post WHERE (post.published = $2)",
+        "SELECT posts.id, posts.title FROM posts WHERE (posts.published = $1) UNION ALL SELECT posts.id, posts.title FROM posts WHERE (posts.published = $2)",
         BindMeta::new(0, 2, 2),
     );
+}
+
+/// Verifies CTE ownership follows allocation identity rather than SQL name equality.
+#[test]
+fn cte_identity_distinguishes_independent_same_name_sources() {
+    let posts = Post::table();
+    let first = db::from(&posts).all::<PostSummary>().cte_as("same_name");
+    let independent = db::from(&posts).all::<PostSummary>().cte_as("same_name");
+
+    let clone_plan = db::from(&first)
+        .with(&first.clone())
+        .all::<PostSummary>()
+        .plan();
+    assert!(clone_plan.is_ok());
+
+    let error = db::from(&first)
+        .with(&independent)
+        .all::<PostSummary>()
+        .plan()
+        .expect_err("independent same-name CTE must not satisfy source ownership");
+    assert!(matches!(
+        error,
+        db::QueryError::BindError(message) if message == "unused CTE 'same_name'"
+    ));
 }
 
 /// Verifies relation SQL generation covers joined records, backrefs, many-to-many, and aggregates.
@@ -272,7 +331,7 @@ fn relation_golden_queries_cover_joined_records_and_correlated_predicates() {
 
     assert_plan(
         &db::from(&post).all::<PostWithAuthor>().plan().unwrap(),
-        "SELECT post.id, post.author_id, post.title, post.published, post.created_at, post.subtitle, author.id, author.email, author.active FROM posts post JOIN users author ON author.id = post.author_id",
+        "SELECT posts.id, posts.author_id, posts.title, posts.published, posts.created_at, posts.subtitle, author.id, author.email, author.active FROM posts JOIN users author ON author.id = posts.author_id",
         BindMeta::new(0, 0, 0),
     );
     assert_plan(
@@ -283,7 +342,7 @@ fn relation_golden_queries_cover_joined_records_and_correlated_predicates() {
             .all::<Post>()
             .plan()
             .unwrap(),
-        "SELECT post.id, post.author_id, post.title, post.published, post.created_at, post.subtitle FROM posts post WHERE EXISTS (SELECT 1 FROM comments comment WHERE comment.post_id = post.id AND (comment.flagged = $1))",
+        "SELECT posts.id, posts.author_id, posts.title, posts.published, posts.created_at, posts.subtitle FROM posts WHERE EXISTS (SELECT 1 FROM comments comment WHERE comment.post_id = posts.id AND (comment.flagged = $1))",
         BindMeta::new(0, 1, 1),
     );
     assert_plan(
@@ -295,7 +354,7 @@ fn relation_golden_queries_cover_joined_records_and_correlated_predicates() {
             .all::<Post>()
             .plan()
             .unwrap(),
-        "SELECT post.id, post.author_id, post.title, post.published, post.created_at, post.subtitle FROM posts post WHERE EXISTS (SELECT 1 FROM post_tags post_tag JOIN tags tag ON tag.id = post_tag.tag_id WHERE post_tag.post_id = post.id AND (tag.name = $1))",
+        "SELECT posts.id, posts.author_id, posts.title, posts.published, posts.created_at, posts.subtitle FROM posts WHERE EXISTS (SELECT 1 FROM post_tags post_tag JOIN tags tag ON tag.id = post_tag.tag_id WHERE post_tag.post_id = posts.id AND (tag.name = $1))",
         BindMeta::new(0, 1, 1),
     );
     assert_plan(
@@ -308,7 +367,7 @@ fn relation_golden_queries_cover_joined_records_and_correlated_predicates() {
             .all::<Post>()
             .plan()
             .unwrap(),
-        "SELECT post.id, post.author_id, post.title, post.published, post.created_at, post.subtitle FROM posts post WHERE ((SELECT COUNT(*) FROM comments comment WHERE comment.post_id = post.id) > $1)",
+        "SELECT posts.id, posts.author_id, posts.title, posts.published, posts.created_at, posts.subtitle FROM posts WHERE ((SELECT COUNT(*) FROM comments comment WHERE comment.post_id = posts.id) > $1)",
         BindMeta::new(0, 1, 1),
     );
 }
@@ -330,7 +389,7 @@ fn function_golden_queries_cover_builtin_json_and_custom_extensions() {
             )
             .plan()
             .unwrap(),
-        "SELECT post.id AS id, CASE WHEN (post.published = $1) THEN post.title ELSE $2 END AS title FROM posts post",
+        "SELECT posts.id AS id, CASE WHEN (posts.published = $1) THEN posts.title ELSE $2 END AS title FROM posts",
         BindMeta::new(0, 2, 2),
     );
 
@@ -340,7 +399,7 @@ fn function_golden_queries_cover_builtin_json_and_custom_extensions() {
             .scalar(db::funcs::json::text(json_post.meta.clone(), "status"))
             .plan()
             .unwrap(),
-        "SELECT (json_post.meta #>> '{status}') FROM json_posts json_post",
+        "SELECT (json_posts.meta #>> '{status}') FROM json_posts LIMIT 1",
         BindMeta::new(0, 0, 0),
     );
 
@@ -357,7 +416,7 @@ fn function_golden_queries_cover_builtin_json_and_custom_extensions() {
             )
             .plan()
             .unwrap(),
-        "SELECT post.id AS id, LOWER(post.title) AS title FROM posts post WHERE (search_rank(post.title) > $1)",
+        "SELECT posts.id AS id, LOWER(posts.title) AS title FROM posts WHERE (search_rank(posts.title) > $1)",
         BindMeta::new(0, 1, 1),
     );
 }
@@ -376,7 +435,7 @@ fn postgres_array_helper_renders_supported_sql() {
             .all::<common::ArrayPost>()
             .plan()
             .unwrap(),
-        "SELECT array_post.id, array_post.tags, array_post.scores FROM array_posts array_post WHERE (array_post.tags @> $1)",
+        "SELECT array_posts.id, array_posts.tags, array_posts.scores FROM array_posts WHERE (array_posts.tags @> $1)",
         BindMeta::new(0, 1, 1),
     );
 }
@@ -396,7 +455,7 @@ fn enum_golden_queries_cover_typed_filters_and_schema_metadata() {
         .unwrap();
     assert_plan(
         &plan,
-        "SELECT enum_post.id, enum_post.status, enum_post.priority FROM enum_posts enum_post WHERE (enum_post.status = $1) AND enum_post.priority IN ($2, $3)",
+        "SELECT enum_posts.id, enum_posts.status, enum_posts.priority FROM enum_posts WHERE (enum_posts.status = $1) AND enum_posts.priority IN ($2, $3)",
         BindMeta::new(0, 3, 3),
     );
 
@@ -555,7 +614,7 @@ fn failure_contracts_reject_invalid_queries_before_execution() {
             .all::<Post>()
             .plan()
             .expect("empty IN has deterministic false semantics"),
-        "SELECT post.id, post.author_id, post.title, post.published, post.created_at, post.subtitle FROM posts post WHERE FALSE",
+        "SELECT posts.id, posts.author_id, posts.title, posts.published, posts.created_at, posts.subtitle FROM posts WHERE FALSE",
         BindMeta::new(0, 0, 0),
     );
 
@@ -565,10 +624,7 @@ fn failure_contracts_reject_invalid_queries_before_execution() {
         "batch insert requires at least one row",
     );
 
-    let cte = db::from(&post)
-        .all::<PostSummary>()
-        .cte_as("post_ids")
-        .unwrap();
+    let cte = db::from(&post).all::<PostSummary>().cte_as("post_ids");
     assert_unsupported(
         db::from(&cte)
             .with(&cte)

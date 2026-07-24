@@ -10,7 +10,7 @@ use super::handles::{ColumnOwner, Table};
 use super::render::SelectModel;
 use super::scope::QueryScope;
 use super::traits::{IntoSourceMeta, IntoTableSource, Projectable};
-use super::validate::{source_key, table_name};
+use super::validate::table_name;
 
 /// Typed common table expression source.
 pub struct Cte<T>
@@ -148,7 +148,12 @@ impl fmt::Debug for Source {
 
 impl PartialEq for Source {
     fn eq(&self, other: &Self) -> bool {
-        source_key(self) == source_key(other)
+        match (self, other) {
+            (Self::Table(left), Self::Table(right)) => left == right,
+            (Self::Cte(left), Self::Cte(right)) => left == right,
+            (Self::Subquery(left), Self::Subquery(right)) => left == right,
+            _ => false,
+        }
     }
 }
 
@@ -156,7 +161,12 @@ impl Eq for Source {}
 
 impl Hash for Source {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        source_key(self).hash(state);
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Self::Table(table) => table.hash(state),
+            Self::Cte(cte) => cte.hash(state),
+            Self::Subquery(subquery) => subquery.hash(state),
+        }
     }
 }
 
@@ -164,8 +174,7 @@ impl Source {
     fn column_owner(&self) -> ColumnOwner {
         match self {
             Source::Table(table) => ColumnOwner::Root(table.clone()),
-            Source::Cte(cte) => ColumnOwner::Source(cte.data.name.clone()),
-            Source::Subquery(subquery) => ColumnOwner::Source(subquery.data.name.clone()),
+            Source::Cte(_) | Source::Subquery(_) => ColumnOwner::Source(self.clone()),
         }
     }
 }
@@ -178,7 +187,7 @@ impl fmt::Debug for CteSource {
 
 impl PartialEq for CteSource {
     fn eq(&self, other: &Self) -> bool {
-        self.data.name == other.data.name
+        Arc::ptr_eq(&self.data, &other.data)
     }
 }
 
@@ -186,7 +195,7 @@ impl Eq for CteSource {}
 
 impl Hash for CteSource {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.data.name.hash(state);
+        Arc::as_ptr(&self.data).hash(state);
     }
 }
 
@@ -200,7 +209,7 @@ impl fmt::Debug for SubquerySource {
 
 impl PartialEq for SubquerySource {
     fn eq(&self, other: &Self) -> bool {
-        self.data.name == other.data.name
+        Arc::ptr_eq(&self.data, &other.data)
     }
 }
 
@@ -208,7 +217,7 @@ impl Eq for SubquerySource {}
 
 impl Hash for SubquerySource {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.data.name.hash(state);
+        Arc::as_ptr(&self.data).hash(state);
     }
 }
 
@@ -560,35 +569,35 @@ impl<T> ProjectedColumn<T> {
     }
 
     /// Adds this projected column to another typed expression.
-    pub fn add<R>(&self, rhs: R) -> Expr<T>
+    pub fn plus<R>(&self, rhs: R) -> Expr<T>
     where
         R: IntoExpr<T>,
     {
-        self.expr().add(rhs)
+        self.expr().plus(rhs)
     }
 
     /// Subtracts a typed expression from this projected column.
-    pub fn sub<R>(&self, rhs: R) -> Expr<T>
+    pub fn minus<R>(&self, rhs: R) -> Expr<T>
     where
         R: IntoExpr<T>,
     {
-        self.expr().sub(rhs)
+        self.expr().minus(rhs)
     }
 
     /// Multiplies this projected column by a typed expression.
-    pub fn mul<R>(&self, rhs: R) -> Expr<T>
+    pub fn times<R>(&self, rhs: R) -> Expr<T>
     where
         R: IntoExpr<T>,
     {
-        self.expr().mul(rhs)
+        self.expr().times(rhs)
     }
 
     /// Divides this projected column by a typed expression.
-    pub fn div<R>(&self, rhs: R) -> Expr<T>
+    pub fn divide_by<R>(&self, rhs: R) -> Expr<T>
     where
         R: IntoExpr<T>,
     {
-        self.expr().div(rhs)
+        self.expr().divide_by(rhs)
     }
 
     /// Computes the remainder after division by a typed expression.

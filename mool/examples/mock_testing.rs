@@ -11,9 +11,7 @@ async fn main() -> Result<(), db::DbError> {
     session.plan_execute_ok("INSERT INTO posts (title) VALUES (?)", 1);
 
     let rows = session
-        .execute(db::Statement::from_str(
-            "INSERT INTO posts (title) VALUES (?)",
-        ))
+        .execute(db::Statement::raw("INSERT INTO posts (title) VALUES (?)"))
         .await?;
 
     assert_eq!(rows, 1);

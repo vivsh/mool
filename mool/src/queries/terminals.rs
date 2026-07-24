@@ -12,7 +12,7 @@ use super::executables::{
 };
 use super::expr::IntoExpr;
 use super::scope::{QueryScope, ReturningScope};
-use super::values::{NoRecord, WriteInput, WriteUsing, WriteValues};
+use super::values::WriteInput;
 
 impl QueryScope {
     /// Builds an executable that fetches all selected rows.
@@ -69,36 +69,12 @@ impl QueryScope {
         Insert { scope: self, row }
     }
 
-    /// Builds an expression-only insert executable.
-    #[doc(hidden)]
-    pub fn insert_using<F>(self, f: F) -> Insert<WriteValues<'static, NoRecord>>
-    where
-        F: FnOnce(WriteUsing) -> WriteUsing,
-    {
-        Insert {
-            scope: self,
-            row: f(WriteUsing::new()).into_values(),
-        }
-    }
-
     /// Builds an executable that updates matching rows from one record.
     pub fn update<W>(self, row: W) -> Update<W>
     where
         W: WriteInput,
     {
         Update { scope: self, row }
-    }
-
-    /// Builds an expression-only update executable.
-    #[doc(hidden)]
-    pub fn update_using<F>(self, f: F) -> Update<WriteValues<'static, NoRecord>>
-    where
-        F: FnOnce(WriteUsing) -> WriteUsing,
-    {
-        Update {
-            scope: self,
-            row: f(WriteUsing::new()).into_values(),
-        }
     }
 
     /// Builds an executable that deletes matching rows.
@@ -184,18 +160,6 @@ where
         }
     }
 
-    /// Builds an expression-only returning insert executable.
-    #[doc(hidden)]
-    pub fn insert_using<F>(self, f: F) -> ReturningInsert<R, WriteValues<'static, NoRecord>>
-    where
-        F: FnOnce(WriteUsing) -> WriteUsing,
-    {
-        ReturningInsert {
-            returning: self,
-            row: f(WriteUsing::new()).into_values(),
-        }
-    }
-
     /// Builds a returning update executable.
     pub fn update<W>(self, row: W) -> ReturningUpdate<R, W>
     where
@@ -204,18 +168,6 @@ where
         ReturningUpdate {
             returning: self,
             row,
-        }
-    }
-
-    /// Builds an expression-only returning update executable.
-    #[doc(hidden)]
-    pub fn update_using<F>(self, f: F) -> ReturningUpdate<R, WriteValues<'static, NoRecord>>
-    where
-        F: FnOnce(WriteUsing) -> WriteUsing,
-    {
-        ReturningUpdate {
-            returning: self,
-            row: f(WriteUsing::new()).into_values(),
         }
     }
 

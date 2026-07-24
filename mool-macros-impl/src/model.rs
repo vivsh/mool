@@ -46,6 +46,16 @@ fn derive_model_impl(
         .iter()
         .map(|field| column_name(field))
         .collect::<Vec<_>>();
+    if let Some(field) = pk_fields
+        .iter()
+        .find(|field| field.column.updatable == Some(true))
+    {
+        return syn::Error::new_spanned(
+            &field.ty,
+            "model primary-key columns cannot be explicitly updateable",
+        )
+        .to_compile_error();
+    }
     let pk_type = match pk_types.as_slice() {
         [ty] => quote! { #ty },
         _ => quote! { (#(#pk_types),*) },
@@ -55,7 +65,7 @@ fn derive_model_impl(
         _ => quote! { (#(self.#pk_idents.clone()),*) },
     };
 
-    let record = crate::record::derive_record_impl(input, runtime_path.clone());
+    let record = crate::record::derive_record_impl(input, runtime_path.clone(), &pk_columns);
     let crate_path = crate::runtime_path(input, runtime_path);
     let wc = generics.where_clause.get_or_insert(syn::WhereClause {
         where_token: <syn::Token![where]>::default(),
@@ -192,9 +202,13 @@ fn gen_column(
     let name = column_name(field);
     let ty = &field.ty;
     let inferred_array_type = array_sql_type(ty);
+    let inferred_temporal_type = temporal_sql_type(ty);
     let nullable_tokens = gen_nullable(
         field,
-        field.column.serial || field.column.sql_type.is_some() || inferred_array_type.is_some(),
+        field.column.serial
+            || field.column.sql_type.is_some()
+            || inferred_array_type.is_some()
+            || inferred_temporal_type.is_some(),
     );
     let pk = field
         .column
@@ -251,6 +265,22 @@ fn gen_column(
     if let Some(sql_type) = inferred_array_type {
         return Some(quote! {
             table = table.column(#name, #sql_type, |c| {
+                #body
+            });
+        });
+    }
+    if let Some(temporal_type) = inferred_temporal_type {
+        let postgres = temporal_type.postgres();
+        let sqlite = temporal_type.sqlite();
+        let mysql = temporal_type.mysql();
+        return Some(quote! {
+            let sql_type = match *dialect {
+                #crate_path::gaman::core::Dialect::Postgres => #postgres,
+                #crate_path::gaman::core::Dialect::Sqlite => #sqlite,
+                #crate_path::gaman::core::Dialect::Mysql => #mysql,
+                #crate_path::gaman::core::Dialect::Mariadb => #mysql,
+            };
+            table = table.column(#name, sql_type, |c| {
                 #body
             });
         });
@@ -425,6 +455,67 @@ fn array_sql_type(ty: &Type) -> Option<&'static str> {
         "chrono::NaiveDate" => Some("date[]"),
         "chrono::NaiveDateTime" => Some("timestamp[]"),
         "chrono::DateTime" => Some("timestamptz[]"),
+        "time::Date" => Some("date[]"),
+        "time::PrimitiveDateTime" => Some("timestamp[]"),
+        "time::OffsetDateTime" => Some("timestamptz[]"),
+        _ => None,
+    }
+}
+
+#[derive(Clone, Copy)]
+enum TemporalSqlType {
+    Date,
+    NaiveTimestamp,
+    UtcTimestamp,
+}
+
+impl TemporalSqlType {
+    fn postgres(self) -> &'static str {
+        match self {
+            Self::Date => "date",
+            Self::NaiveTimestamp => "timestamp",
+            Self::UtcTimestamp => "timestamptz",
+        }
+    }
+
+    fn sqlite(self) -> &'static str {
+        "text"
+    }
+
+    fn mysql(self) -> &'static str {
+        match self {
+            Self::Date => "date",
+            Self::NaiveTimestamp => "datetime(6)",
+            Self::UtcTimestamp => "timestamp(6)",
+        }
+    }
+}
+
+/// Maps canonical Chrono and `time` paths to backend-aware schema families.
+///
+/// Imported aliases and custom wrappers intentionally return `None`, requiring
+/// callers to provide an explicit column type rather than guessing.
+fn temporal_sql_type(ty: &Type) -> Option<TemporalSqlType> {
+    let ty = option_inner_type(ty).unwrap_or(ty);
+    let Type::Path(path) = ty else {
+        return None;
+    };
+    if path.qself.is_some() {
+        return None;
+    }
+    let normalized = path
+        .path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect::<Vec<_>>()
+        .join("::");
+    match normalized.as_str() {
+        "chrono::NaiveDate" | "time::Date" => Some(TemporalSqlType::Date),
+        "chrono::NaiveDateTime" | "time::PrimitiveDateTime" => {
+            Some(TemporalSqlType::NaiveTimestamp)
+        }
+        "chrono::DateTime" | "time::OffsetDateTime" => Some(TemporalSqlType::UtcTimestamp),
         _ => None,
     }
 }

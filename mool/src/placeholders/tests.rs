@@ -15,4 +15,5 @@ pub(super) fn parts_to_strings(parts: Vec<PlaceholderPart>) -> Vec<String> {
 }
 
 mod iter;
+mod properties;
 mod resolve;

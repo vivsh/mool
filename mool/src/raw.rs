@@ -39,6 +39,12 @@ impl RawQuery {
         if self.error.is_some() {
             return self;
         }
+        if self.named_args.contains_key(name) {
+            self.error = Some(QueryError::BindError(format!(
+                "duplicate raw binding for '{name}'"
+            )));
+            return self;
+        }
         self.named_args.insert(name.to_string(), ArgValue::new(val));
         self
     }

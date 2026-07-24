@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::borrow::Cow;
 
 use mool as db;
@@ -311,7 +309,7 @@ impl db::Backref for PostComments {
             table_name: "comments",
             table_schema: None,
             columns: &[db::JoinColumn {
-                from: "post.id",
+                from: "posts.id",
                 to: "post_id",
             }],
             join_type: db::JoinType::Inner,
@@ -336,7 +334,7 @@ impl db::ManyToMany for PostTags {
             table_name: "post_tags",
             table_schema: None,
             columns: &[db::JoinColumn {
-                from: "post.id",
+                from: "posts.id",
                 to: "post_id",
             }],
             join_type: db::JoinType::Inner,
@@ -367,8 +365,11 @@ impl db::DbExpression<String> for LowerTitle {
         db::FunctionArgs::new((&self.title,))
     }
 
-    fn render(&self, ctx: &mut db::ExprRenderCtx<'_>) -> Result<String, db::QueryError> {
-        Ok(format!("LOWER({})", ctx.arg(0)?))
+    fn render(&self, ctx: &mut db::ExprRenderCtx<'_>) -> Result<(), db::QueryError> {
+        ctx.push_sql("LOWER(");
+        ctx.push_arg(0)?;
+        ctx.push_sql(")");
+        Ok(())
     }
 }
 
@@ -376,7 +377,7 @@ impl db::DbExpression<String> for LowerTitle {
 pub struct SearchRank;
 
 impl db::DbFunction<f64> for SearchRank {
-    fn name(&self) -> Result<Cow<'static, str>, db::QueryError> {
+    fn name(&self, _dialect: db::SqlDialect) -> Result<Cow<'static, str>, db::QueryError> {
         Ok(Cow::Borrowed("search_rank"))
     }
 }

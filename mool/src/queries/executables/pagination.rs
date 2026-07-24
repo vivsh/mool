@@ -9,6 +9,7 @@ use crate::placeholders::Dialect;
 
 use super::super::binds::statement_from_plan;
 use super::super::scope::QueryScope;
+use crate::QueryError;
 
 impl QueryScope {
     /// Executes a paginated read by running count and slice queries.
@@ -26,13 +27,13 @@ impl QueryScope {
     {
         let page = page.max(1);
         let per_page = per_page.max(1);
+        let offset = (page - 1)
+            .checked_mul(per_page)
+            .ok_or(QueryError::PaginationOverflow { page, per_page })?;
         let count_stmt =
             statement_from_plan(self.plan_count(Dialect::active())?, Arguments::default())?;
         let total = session.fetch_scalar(count_stmt).await?;
-        let items = self
-            .slice::<T>((page - 1) * per_page, per_page)
-            .exec(session)
-            .await?;
+        let items = self.slice::<T>(offset, per_page).exec(session).await?;
         Ok(Page::new(items, total, page, per_page))
     }
 }

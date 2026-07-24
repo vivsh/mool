@@ -1,6 +1,6 @@
 //! Explicit prefetch support traits.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
 use crate::interfaces::Record;
@@ -82,19 +82,47 @@ where
     where
         S: crate::executor::DbSession,
     {
-        let stmt = self.statement()?;
-        let rows: Vec<R::To> = session.fetch_all(stmt).await?;
-        let mut grouped = HashMap::with_capacity(rows.len());
-        for row in rows {
-            grouped
-                .entry(P::child_key(&row))
-                .or_insert_with(Vec::new)
-                .push(row);
+        self.validate_relation()?;
+        let indexes = self.unique_parent_indexes();
+        let rows_per_statement = crate::backend::PARAMETER_LIMIT
+            .checked_div(P::KEY_ARITY)
+            .filter(|rows| *rows > 0)
+            .ok_or_else(|| crate::DbError::Relation {
+                relation: R::NAME,
+                reason: "prefetch key exceeds the backend parameter limit".to_string(),
+            })?;
+        let mut grouped: HashMap<P::Key, Vec<R::To>> = HashMap::new();
+        for indexes in indexes.chunks(rows_per_statement) {
+            let stmt = self.statement(indexes)?;
+            let rows: Vec<R::To> = session.fetch_all(stmt).await?;
+            for row in rows {
+                grouped.entry(P::child_key(&row)).or_default().push(row);
+            }
         }
         Ok(grouped)
     }
 
-    fn statement(&self) -> Result<crate::Statement, crate::DbError> {
+    fn statement(&self, parent_indexes: &[usize]) -> Result<crate::Statement, crate::DbError> {
+        let meta = R::meta();
+        let columns = meta
+            .columns
+            .iter()
+            .map(|column| column.to)
+            .collect::<Vec<_>>();
+        let sql = self.prefetch_sql(
+            meta.table_schema,
+            meta.table_name,
+            &columns,
+            parent_indexes.len(),
+        )?;
+        let mut stmt = crate::Statement::raw(&sql);
+        for index in parent_indexes {
+            stmt = self.parents[*index].bind_parent_key(stmt);
+        }
+        Ok(stmt)
+    }
+
+    fn validate_relation(&self) -> Result<(), crate::DbError> {
         let meta = R::meta();
         if meta.columns.is_empty() {
             return Err(crate::DbError::Relation {
@@ -113,20 +141,26 @@ where
             });
         }
         validate_identifier(meta.table_name)?;
+        if let Some(schema) = meta.table_schema {
+            validate_identifier(schema)?;
+        }
         for column in meta.columns {
+            validate_identifier(column.from)?;
             validate_identifier(column.to)?;
         }
-        let columns = meta
-            .columns
-            .iter()
-            .map(|column| column.to)
-            .collect::<Vec<_>>();
-        let sql = self.prefetch_sql(meta.table_schema, meta.table_name, &columns)?;
-        let mut stmt = crate::Statement::from_str(&sql);
-        for parent in &self.parents {
-            stmt = parent.bind_parent_key(stmt);
+        for column in R::To::record_column_names() {
+            validate_qualified_identifier(&column)?;
         }
-        Ok(stmt)
+        Ok(())
+    }
+
+    fn unique_parent_indexes(&self) -> Vec<usize> {
+        let mut keys = HashSet::with_capacity(self.parents.len());
+        self.parents
+            .iter()
+            .enumerate()
+            .filter_map(|(index, parent)| keys.insert(parent.parent_key()).then_some(index))
+            .collect()
     }
 
     fn prefetch_sql(
@@ -134,6 +168,7 @@ where
         schema: Option<&str>,
         table: &str,
         columns: &[&str],
+        rows: usize,
     ) -> Result<String, crate::DbError> {
         if let Some(schema) = schema {
             validate_identifier(schema)?;
@@ -149,10 +184,17 @@ where
         sql.push_str(" WHERE ");
         push_prefetch_lhs(columns, &mut sql);
         sql.push_str(" IN (");
-        push_key_rows(self.parents.len(), columns.len(), &mut sql);
+        push_key_rows(rows, columns.len(), &mut sql);
         sql.push(')');
         Ok(sql)
     }
+}
+
+fn validate_qualified_identifier(value: &str) -> Result<(), crate::DbError> {
+    for part in value.split('.') {
+        validate_identifier(part)?;
+    }
+    Ok(())
 }
 
 fn push_prefetch_lhs(columns: &[&str], sql: &mut String) {

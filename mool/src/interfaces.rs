@@ -17,7 +17,8 @@ pub struct RecordSchema<T> {
     pub(crate) root_name: Option<&'static str>,
     pub(crate) references: Vec<ReferenceMeta>,
     pub(crate) column_names: Vec<String>,
-    pub(crate) bind_column_names: Vec<String>,
+    pub(crate) insert_column_names: Vec<String>,
+    pub(crate) update_column_names: Vec<String>,
     _marker: PhantomData<fn() -> T>,
 }
 
@@ -30,7 +31,8 @@ impl<T> RecordSchema<T> {
             root_name: None,
             references: Vec::new(),
             column_names: Vec::new(),
-            bind_column_names: Vec::new(),
+            insert_column_names: Vec::new(),
+            update_column_names: Vec::new(),
             _marker: PhantomData,
         }
     }
@@ -71,15 +73,27 @@ impl<T> RecordSchema<T> {
         self
     }
 
-    /// Appends a single bind column name.
-    pub fn bind_column(mut self, name: impl Into<String>) -> Self {
-        self.bind_column_names.push(name.into());
+    /// Appends a column accepted by insert operations.
+    pub fn insert_column(mut self, name: impl Into<String>) -> Self {
+        self.insert_column_names.push(name.into());
         self
     }
 
-    /// Replaces the bind column names.
-    pub fn bind_columns(mut self, columns: Vec<String>) -> Self {
-        self.bind_column_names = columns;
+    /// Replaces columns accepted by insert operations.
+    pub fn insert_columns(mut self, columns: Vec<String>) -> Self {
+        self.insert_column_names = columns;
+        self
+    }
+
+    /// Appends a column accepted by update operations.
+    pub fn update_column(mut self, name: impl Into<String>) -> Self {
+        self.update_column_names.push(name.into());
+        self
+    }
+
+    /// Replaces columns accepted by update operations.
+    pub fn update_columns(mut self, columns: Vec<String>) -> Self {
+        self.update_column_names = columns;
         self
     }
 }
@@ -152,37 +166,60 @@ pub trait Record: Sized {
         Self::record_schema().column_names
     }
 
-    /// Columns written by this record in bind order.
-    fn record_bind_column_names() -> Vec<String> {
-        Self::record_schema().bind_column_names
+    /// Columns written by inserts in bind order.
+    fn record_insert_column_names() -> Vec<String> {
+        Self::record_schema().insert_column_names
     }
 
-    /// Bind this record's writable values into SQL arguments.
-    fn record_bind_values(&self, _args: &mut Arguments<'static>) -> Result<(), sqlx::Error> {
+    /// Columns written by updates in bind order.
+    fn record_update_column_names() -> Vec<String> {
+        Self::record_schema().update_column_names
+    }
+
+    /// Binds this record's insert values into SQL arguments.
+    fn record_bind_insert_values(&self, _args: &mut Arguments<'static>) -> Result<(), sqlx::Error> {
         Ok(())
     }
 
-    /// Bind only the requested writable columns in the provided order.
-    ///
-    /// The default implementation supports the full bind-column list. Derived
-    /// records override this so expression-based writes can replace individual
-    /// fields without binding unused values.
-    fn record_bind_selected(
+    /// Binds selected insert columns in the requested order.
+    fn record_bind_insert_selected(
         &self,
         columns: &[&str],
         args: &mut Arguments<'static>,
     ) -> Result<(), sqlx::Error> {
-        let expected = Self::record_bind_column_names();
+        let expected = Self::record_insert_column_names();
         if columns.len() != expected.len() {
             return Err(sqlx::Error::Protocol(
                 "record does not support selective binding".to_string(),
             ));
         }
         if columns.iter().zip(expected.iter()).all(|(a, b)| *a == b) {
-            return self.record_bind_values(args);
+            return self.record_bind_insert_values(args);
         }
         Err(sqlx::Error::Protocol(
             "record does not support selective binding".to_string(),
+        ))
+    }
+
+    /// Binds this record's update values into SQL arguments.
+    fn record_bind_update_values(&self, _args: &mut Arguments<'static>) -> Result<(), sqlx::Error> {
+        Ok(())
+    }
+
+    /// Binds selected update values and model key values in requested order.
+    fn record_bind_update_selected(
+        &self,
+        columns: &[&str],
+        args: &mut Arguments<'static>,
+    ) -> Result<(), sqlx::Error> {
+        let expected = Self::record_update_column_names();
+        if columns.len() == expected.len()
+            && columns.iter().zip(expected.iter()).all(|(a, b)| *a == b)
+        {
+            return self.record_bind_update_values(args);
+        }
+        Err(sqlx::Error::Protocol(
+            "record does not support selective update binding".to_string(),
         ))
     }
 

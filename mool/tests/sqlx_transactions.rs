@@ -23,48 +23,36 @@ async fn count(pool: &mut db::DbPool) -> i64 {
         .expect("count transaction rows")
 }
 
-/// Verifies a successful pool transaction callback commits its writes.
+/// Verifies an explicitly committed transaction persists its writes.
 #[db::sqlx::test]
 #[ignore = "run through scripts/integration-tests.sh"]
 async fn selected_backend_transaction_commits(pool: db::backend::Pool) {
     let mut pool = setup(pool).await;
-    pool.transaction(|transaction| {
-        Box::pin(async move {
-            transaction
-                .execute(statement(
-                    "INSERT INTO mool_transactions (id, name) VALUES (1, 'committed')",
-                ))
-                .await?;
-            Ok(())
-        })
-    })
-    .await
-    .expect("commit successful callback");
+    let mut transaction = pool.begin().await.expect("begin transaction");
+    transaction
+        .execute(statement(
+            "INSERT INTO mool_transactions (id, name) VALUES (1, 'committed')",
+        ))
+        .await
+        .expect("insert committed row");
+    transaction.commit().await.expect("commit transaction");
 
     assert_eq!(count(&mut pool).await, 1);
 }
 
-/// Verifies a failed pool transaction callback rolls back its writes.
+/// Verifies an explicitly rolled-back transaction discards its writes.
 #[db::sqlx::test]
 #[ignore = "run through scripts/integration-tests.sh"]
 async fn selected_backend_transaction_rolls_back_error(pool: db::backend::Pool) {
     let mut pool = setup(pool).await;
-    let result = pool
-        .transaction(|transaction| {
-            Box::pin(async move {
-                transaction
-                    .execute(statement(
-                        "INSERT INTO mool_transactions (id, name) VALUES (1, 'rolled-back')",
-                    ))
-                    .await?;
-                Err::<(), _>(db::DbError::QuerySet(db::QueryError::MissingBinding(
-                    "expected-test-error".to_string(),
-                )))
-            })
-        })
-        .await;
-
-    assert!(result.is_err());
+    let mut transaction = pool.begin().await.expect("begin transaction");
+    transaction
+        .execute(statement(
+            "INSERT INTO mool_transactions (id, name) VALUES (1, 'rolled-back')",
+        ))
+        .await
+        .expect("insert rolled-back row");
+    transaction.rollback().await.expect("roll back transaction");
     assert_eq!(count(&mut pool).await, 0);
 }
 

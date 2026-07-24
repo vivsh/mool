@@ -1,7 +1,11 @@
 //! SQL expression rendering.
 
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use super::super::dialect::DialectFeature;
 use super::super::expr::{ColumnRef, ExprNode};
+use super::super::extension::CustomExpressionSpec;
 use super::super::extension::ExprRenderCtx;
 use super::super::handles::{ColumnOwner, Table};
 use super::super::source::Source;
@@ -19,6 +23,12 @@ struct ManyToManyExists<'a> {
     target: &'a Table,
     predicate: Option<&'a ExprNode>,
     negated: bool,
+}
+
+#[derive(Clone)]
+struct CachedPostgresArg {
+    sql: String,
+    occurrences: Vec<(String, usize)>,
 }
 
 impl Renderer {
@@ -65,13 +75,7 @@ impl Renderer {
                 Ok(format!("{name}({})", rendered.join(", ")))
             }
             ExprNode::Custom { expression, args } => {
-                expression.validate(self.dialect)?;
-                let rendered = args
-                    .iter()
-                    .map(|arg| self.render_expr(arg, mode))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let mut ctx = ExprRenderCtx::new(self.dialect, &rendered);
-                expression.render(&mut ctx)
+                self.render_custom_expression(expression, args, mode)
             }
             ExprNode::Over { expr, window } => {
                 super::super::render_window::render_over(self, expr, window, mode)
@@ -133,6 +137,93 @@ impl Renderer {
                 mode,
             ),
         }
+    }
+
+    /// Renders a custom expression while preserving per-dialect child reuse semantics.
+    fn render_custom_expression(
+        &mut self,
+        expression: &Arc<dyn CustomExpressionSpec>,
+        args: &[ExprNode],
+        mode: RenderMode<'_>,
+    ) -> Result<String, QueryError> {
+        expression.validate(self.dialect)?;
+        let dialect = self.dialect;
+        let mut cache = vec![None; args.len()];
+        let mut render_arg = |index: usize, sql: &mut String| {
+            self.render_custom_arg(args, index, mode, &mut cache, sql)
+        };
+        let mut ctx = ExprRenderCtx::new(dialect, &mut render_arg);
+        expression.render(&mut ctx)?;
+        Ok(ctx.finish())
+    }
+
+    /// Renders one custom child, caching PostgreSQL SQL and logical parameters by index.
+    fn render_custom_arg(
+        &mut self,
+        args: &[ExprNode],
+        index: usize,
+        mode: RenderMode<'_>,
+        cache: &mut [Option<CachedPostgresArg>],
+        sql: &mut String,
+    ) -> Result<(), QueryError> {
+        let arg = args
+            .get(index)
+            .ok_or_else(|| QueryError::BindError(format!("missing expression argument {index}")))?;
+        if self.dialect != crate::SqlDialect::Postgres {
+            sql.push_str(&self.render_expr(arg, mode)?);
+            return Ok(());
+        }
+        if let Some(cached) = cache.get(index).and_then(Clone::clone) {
+            self.repeat_postgres_occurrences(&cached.occurrences)?;
+            sql.push_str(&cached.sql);
+            return Ok(());
+        }
+        let before = self.param_occurrence_counts();
+        let rendered = self.render_expr(arg, mode)?;
+        let cached = CachedPostgresArg {
+            sql: rendered.clone(),
+            occurrences: self.param_occurrence_delta(&before),
+        };
+        cache[index] = Some(cached);
+        sql.push_str(&rendered);
+        Ok(())
+    }
+
+    fn param_occurrence_counts(&self) -> HashMap<String, usize> {
+        self.params
+            .iter()
+            .map(|(name, param)| (name.clone(), param.spec.occurrences.len()))
+            .collect()
+    }
+
+    fn param_occurrence_delta(&self, before: &HashMap<String, usize>) -> Vec<(String, usize)> {
+        self.params
+            .iter()
+            .filter_map(|(name, param)| {
+                let added = param
+                    .spec
+                    .occurrences
+                    .len()
+                    .saturating_sub(before.get(name).copied().unwrap_or(0));
+                (added > 0).then(|| (name.clone(), added))
+            })
+            .collect()
+    }
+
+    fn repeat_postgres_occurrences(
+        &mut self,
+        occurrences: &[(String, usize)],
+    ) -> Result<(), QueryError> {
+        for (name, count) in occurrences {
+            let param = self.params.get_mut(name).ok_or_else(|| {
+                QueryError::BindError(format!("missing cached parameter '{name}'"))
+            })?;
+            param
+                .spec
+                .occurrences
+                .extend(std::iter::repeat_n(param.spec.position, *count));
+        }
+        Ok(())
     }
 
     fn render_relation_exists(
@@ -325,7 +416,7 @@ impl Renderer {
             (RenderMode::MutationRoot { .. }, ColumnOwner::Source(source)) => {
                 Err(QueryError::BindError(format!(
                     "mutation filters do not support source column '{}'",
-                    source
+                    super::super::validate::source_label(source)
                 )))
             }
             (RenderMode::MutationRoot { .. }, ColumnOwner::Reference(reference)) => {

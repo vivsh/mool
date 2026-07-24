@@ -99,13 +99,14 @@ run_cargo_suite() {
   local engine="$1"
 
   if [[ "${selected_suite}" == "smoke" ]]; then
-    cargo test -p mool --no-default-features --features "${engine}" \
+    cargo test --locked -p mool --no-default-features --features "${engine}" \
       --test sqlx_smoke -- --ignored
     return
   fi
 
-  cargo test -p mool --no-default-features --features "${engine}" \
-    --test sqlx_smoke --test sqlx_transactions --test batch_writes_sqlx -- --ignored
+  cargo test --locked -p mool --no-default-features --features "${engine} time" \
+    --test sqlx_smoke --test sqlx_transactions --test batch_writes_sqlx \
+    --test datetime_sqlx -- --ignored
 }
 
 main() {

@@ -1,6 +1,8 @@
 use mool as db;
 use mool::DbSession;
 use mool::Model;
+#[cfg(feature = "postgres")]
+use sqlx::types::Uuid;
 
 #[cfg(any(feature = "postgres", feature = "sqlite"))]
 use mool::backend::IgnoreConflictsExt;
@@ -183,7 +185,7 @@ struct UnnestRow {
     #[column(primary_key)]
     id: i64,
     #[column(type = "uuid")]
-    external_id: uuid::Uuid,
+    external_id: Uuid,
     #[column(type = "timestamptz")]
     created_at: chrono::DateTime<chrono::Utc>,
     #[column(type = "jsonb")]
@@ -198,7 +200,7 @@ struct UnnestRow {
 #[table(name = "mool_unnest_rows")]
 struct UnnestInput {
     #[column(type = "uuid")]
-    external_id: uuid::Uuid,
+    external_id: Uuid,
     #[column(type = "timestamptz")]
     created_at: chrono::DateTime<chrono::Utc>,
     #[column(type = "jsonb")]
@@ -221,14 +223,14 @@ async fn postgres_executes_generated_unnest_arrays(pool: db::backend::Pool) {
     let now = chrono::Utc::now();
     let rows = [
         UnnestInput {
-            external_id: uuid::Uuid::new_v4(),
+            external_id: Uuid::from_u128(1),
             created_at: now,
             metadata: serde_json::json!({"row": 1}),
             subtitle: None,
             status: UnnestStatus::Draft,
         },
         UnnestInput {
-            external_id: uuid::Uuid::new_v4(),
+            external_id: Uuid::from_u128(2),
             created_at: now,
             metadata: serde_json::json!({"row": 2}),
             subtitle: Some("two".to_string()),

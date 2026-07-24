@@ -11,7 +11,7 @@ use super::super::binds::statement_from_plan;
 use super::super::expr::IntoExpr;
 use super::super::handles::{Column, Var};
 use super::super::plan::QueryPlan;
-use super::super::values::{WriteInput, WriteUsing, WriteValues};
+use super::super::values::{WriteInput, WriteValues};
 use super::{
     ReturningBatchInsert, ReturningBatchUpdate, ReturningBatchUpsert, ReturningDelete,
     ReturningInsert, ReturningUpdate,
@@ -40,8 +40,7 @@ where
     /// Renders SQL and parameter metadata without executing the insert.
     pub fn plan(&self) -> Result<QueryPlan, QueryError> {
         self.returning
-            .plan_insert(&self.row, Dialect::active())
-            .map(|(plan, _)| plan)
+            .plan_insert_shape(&self.row, Dialect::active())
     }
 
     /// Executes this returning insert.
@@ -69,18 +68,6 @@ where
         ReturningInsert {
             returning: self.returning,
             row: WriteValues::record(self.row).set(column, expr),
-        }
-    }
-
-    /// Adds computed write assignments on top of the record payload.
-    #[doc(hidden)]
-    pub fn using<F>(self, f: F) -> ReturningInsert<R, WriteValues<'a, T>>
-    where
-        F: FnOnce(WriteUsing) -> WriteUsing,
-    {
-        ReturningInsert {
-            returning: self.returning,
-            row: WriteValues::record(self.row).extend(f(WriteUsing::new()).into_values()),
         }
     }
 }
@@ -118,8 +105,7 @@ where
     /// Renders SQL and parameter metadata without executing the update.
     pub fn plan(&self) -> Result<QueryPlan, QueryError> {
         self.returning
-            .plan_update(&self.row, Dialect::active())
-            .map(|(plan, _)| plan)
+            .plan_update_shape(&self.row, Dialect::active())
     }
 
     /// Executes this returning update.
@@ -147,18 +133,6 @@ where
         ReturningUpdate {
             returning: self.returning,
             row: WriteValues::record(self.row).set(column, expr),
-        }
-    }
-
-    /// Adds computed write assignments on top of the record payload.
-    #[doc(hidden)]
-    pub fn using<F>(self, f: F) -> ReturningUpdate<R, WriteValues<'a, T>>
-    where
-        F: FnOnce(WriteUsing) -> WriteUsing,
-    {
-        ReturningUpdate {
-            returning: self.returning,
-            row: WriteValues::record(self.row).extend(f(WriteUsing::new()).into_values()),
         }
     }
 }
@@ -219,8 +193,8 @@ where
         let mode = self.mode();
         let mut statements = Vec::with_capacity(ranges.len());
         for range in ranges {
-            let (plan, _) = self.returning.plan_batch_insert_mode(
-                &self.rows[range.clone()],
+            let plan = self.returning.plan_batch_insert_shape::<T>(
+                range.len(),
                 &mode,
                 Dialect::active(),
             )?;
@@ -256,15 +230,13 @@ where
 
     /// Sizes returning insert batches after reserving projection parameters.
     fn ranges(&self) -> Result<Vec<std::ops::Range<usize>>, QueryError> {
-        let width = T::record_bind_column_names().len();
-        let Some(first) = self.rows.first() else {
+        let width = T::record_insert_column_names().len();
+        if self.rows.is_empty() {
             return self.policy.ranges("batch insert", 0, width);
-        };
-        let (sample, _) = self.returning.plan_batch_insert_mode(
-            std::slice::from_ref(first),
-            &self.mode(),
-            Dialect::active(),
-        )?;
+        }
+        let sample =
+            self.returning
+                .plan_batch_insert_shape::<T>(1, &self.mode(), Dialect::active())?;
         self.policy.ranges_with_overhead(
             "batch insert",
             self.rows.len(),
@@ -318,8 +290,8 @@ where
         let mode = self.mode();
         let mut statements = Vec::with_capacity(ranges.len());
         for range in ranges {
-            let (plan, _) = self.returning.plan_batch_insert_mode(
-                &self.rows[range.clone()],
+            let plan = self.returning.plan_batch_insert_shape::<T>(
+                range.len(),
                 &mode,
                 Dialect::active(),
             )?;
@@ -355,15 +327,13 @@ where
 
     /// Sizes returning upsert batches after reserving projection parameters.
     fn ranges(&self) -> Result<Vec<std::ops::Range<usize>>, QueryError> {
-        let width = T::record_bind_column_names().len();
-        let Some(first) = self.rows.first() else {
+        let width = T::record_insert_column_names().len();
+        if self.rows.is_empty() {
             return self.policy.ranges("batch upsert", 0, width);
-        };
-        let (sample, _) = self.returning.plan_batch_insert_mode(
-            std::slice::from_ref(first),
-            &self.mode(),
-            Dialect::active(),
-        )?;
+        }
+        let sample =
+            self.returning
+                .plan_batch_insert_shape::<T>(1, &self.mode(), Dialect::active())?;
         self.policy.ranges_with_overhead(
             "batch upsert",
             self.rows.len(),
@@ -402,7 +372,7 @@ where
         let ranges = self.ranges()?;
         let mut statements = Vec::with_capacity(ranges.len());
         for range in ranges {
-            let (plan, _) = self.returning.plan_batch_update(
+            let plan = self.returning.plan_batch_update_shape(
                 &self.rows[range.clone()],
                 &self.update_columns,
                 Dialect::active(),
@@ -442,11 +412,11 @@ where
             .scope
             .validate_batch_update_input::<T>(self.rows, &self.update_columns)?;
         let width = T::primary_key_columns().len() + self.update_columns.len();
-        let Some(first) = self.rows.first() else {
+        if self.rows.is_empty() {
             return self.policy.ranges("batch update", 0, width);
-        };
-        let (sample, _) = self.returning.plan_batch_update(
-            std::slice::from_ref(first),
+        }
+        let sample = self.returning.plan_batch_update_shape(
+            &self.rows[..1],
             &self.update_columns,
             Dialect::active(),
         )?;

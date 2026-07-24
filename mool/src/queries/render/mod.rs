@@ -13,8 +13,7 @@ use super::handles::VarId;
 use super::plan::ParamSpec;
 use super::source::Source;
 use super::validate::{
-    singular_alias, source_alias, source_key, validate_identifier, validate_reference,
-    validate_source_shape,
+    source_alias, source_key, validate_identifier, validate_reference, validate_source_shape,
 };
 use crate::QueryError;
 
@@ -48,21 +47,11 @@ impl SelectModel {
     {
         validate_source_shape::<T>(source)?;
         let schema = T::record_schema();
-        let scan_root_alias = match schema.root_name {
-            Some(root_name) => root_name.to_string(),
-            None => singular_alias(schema.table_name),
-        };
+        let scan_root_alias = schema.root_name.unwrap_or(schema.table_name).to_string();
         validate_identifier(&scan_root_alias)?;
         let root_alias = source_alias(source, &scan_root_alias);
         validate_identifier(&root_alias)?;
-        let references = schema
-            .references
-            .into_iter()
-            .map(|reference| {
-                validate_reference(&reference)?;
-                Ok((reference.logical_name.to_string(), reference))
-            })
-            .collect::<Result<IndexMap<_, _>, QueryError>>()?;
+        let references = validated_references(schema.references, &root_alias, &scan_root_alias)?;
         Ok(Self {
             source: source.clone(),
             root_alias,
@@ -77,7 +66,7 @@ impl SelectModel {
     /// (`count`, `scalar`, `exists`). Only root-table columns are addressable;
     /// joined references require a row-shaped `Record` projection instead.
     pub(super) fn source_only(source: &Source) -> Result<Self, QueryError> {
-        let scan_root_alias = singular_alias(source_key(source).2);
+        let scan_root_alias = source_key(source).2.to_string();
         validate_identifier(&scan_root_alias)?;
         let root_alias = source_alias(source, &scan_root_alias);
         validate_identifier(&root_alias)?;
@@ -90,6 +79,47 @@ impl SelectModel {
             result_type: "",
         })
     }
+
+    pub(super) fn deferred<T>(source: &Source) -> Self
+    where
+        T: Record,
+    {
+        let schema = T::record_schema();
+        let scan_root_alias = schema.root_name.unwrap_or(schema.table_name).to_string();
+        let root_alias = source_alias(source, &scan_root_alias);
+        let references = schema
+            .references
+            .into_iter()
+            .map(|reference| (reference.logical_name.to_string(), reference))
+            .collect();
+        Self {
+            source: source.clone(),
+            root_alias,
+            scan_root_alias,
+            references,
+            columns: schema.column_names,
+            result_type: type_name::<T>(),
+        }
+    }
+}
+
+fn validated_references(
+    references: Vec<ReferenceMeta>,
+    root_alias: &str,
+    scan_root_alias: &str,
+) -> Result<IndexMap<String, ReferenceMeta>, QueryError> {
+    let mut validated = IndexMap::new();
+    for reference in references {
+        validate_reference(&reference)?;
+        let name = reference.logical_name.to_string();
+        if name == root_alias || name == scan_root_alias || validated.contains_key(&name) {
+            return Err(QueryError::BindError(format!(
+                "duplicate or colliding query alias '{name}'"
+            )));
+        }
+        validated.insert(name, reference);
+    }
+    Ok(validated)
 }
 
 pub(super) struct Renderer {

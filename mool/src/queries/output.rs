@@ -1,10 +1,7 @@
 //! Typed output projection targets for derived SELECT expressions.
 
 use std::any::TypeId;
-use std::cell::RefCell;
 use std::marker::PhantomData;
-use std::ops::Deref;
-use std::rc::Rc;
 use std::sync::Arc;
 
 use super::expr::{ExprNode, IntoExpr};
@@ -38,12 +35,6 @@ pub(super) struct OutputColumnData {
     pub(super) record: TypeId,
     pub(super) record_name: &'static str,
     pub(super) name: Arc<str>,
-}
-
-/// Internal builder for derived output projection assignments.
-#[derive(Clone, Default)]
-pub struct Selects {
-    pub(super) assignments: Vec<SelectAssignment>,
 }
 
 #[derive(Clone)]
@@ -127,23 +118,6 @@ impl<T> IntoOutputTarget<T> for &OutputColumn<T> {
     }
 }
 
-impl Selects {
-    pub(super) fn new() -> Self {
-        Self::default()
-    }
-
-    pub(super) fn set_in_place<T>(&mut self, target: &OutputColumn<T>, expr: ExprNode) {
-        self.assignments.push(SelectAssignment {
-            target: OutputRef {
-                record: target.data.record,
-                record_name: target.data.record_name,
-                name: target.data.name.clone(),
-            },
-            expr,
-        });
-    }
-}
-
 pub(super) fn select_assignment<T>(
     target: impl IntoOutputTarget<T>,
     expr: impl IntoExpr<T>,
@@ -156,108 +130,5 @@ pub(super) fn select_assignment<T>(
             name: target.data.name.clone(),
         },
         expr: expr.into_expr().node,
-    }
-}
-
-/// Output assignment builder retained for hidden callback compatibility.
-#[doc(hidden)]
-pub struct ReadUsing<R>
-where
-    R: HasOutputCols,
-{
-    columns: Arc<R::OutputColumns>,
-    assignments: Rc<RefCell<Selects>>,
-}
-
-/// Returning assignment builder retained for hidden callback compatibility.
-#[doc(hidden)]
-pub struct ReturningUsing<R>
-where
-    R: HasOutputCols,
-{
-    columns: Arc<R::OutputColumns>,
-    assignments: Rc<RefCell<Selects>>,
-}
-
-impl<R> ReadUsing<R>
-where
-    R: HasOutputCols,
-{
-    pub(super) fn new() -> Self {
-        Self {
-            columns: Arc::new(R::output_columns(OutputSource::new::<R>())),
-            assignments: Rc::new(RefCell::new(Selects::new())),
-        }
-    }
-
-    /// Assigns a typed expression to a read output target.
-    pub fn set<T>(&self, target: &OutputColumn<T>, expr: impl IntoExpr<T>) -> Self {
-        self.assignments
-            .borrow_mut()
-            .set_in_place(target, expr.into_expr().node);
-        Self {
-            columns: self.columns.clone(),
-            assignments: self.assignments.clone(),
-        }
-    }
-
-    pub(super) fn into_selects(self) -> Selects {
-        into_selects(self.assignments)
-    }
-}
-
-impl<R> ReturningUsing<R>
-where
-    R: HasOutputCols,
-{
-    pub(super) fn new() -> Self {
-        Self {
-            columns: Arc::new(R::output_columns(OutputSource::new::<R>())),
-            assignments: Rc::new(RefCell::new(Selects::new())),
-        }
-    }
-
-    /// Assigns a typed expression to a returning output target.
-    pub fn set<T>(&self, target: &OutputColumn<T>, expr: impl IntoExpr<T>) -> Self {
-        self.assignments
-            .borrow_mut()
-            .set_in_place(target, expr.into_expr().node);
-        Self {
-            columns: self.columns.clone(),
-            assignments: self.assignments.clone(),
-        }
-    }
-
-    pub(super) fn into_selects(self) -> Selects {
-        into_selects(self.assignments)
-    }
-}
-
-impl<R> Deref for ReadUsing<R>
-where
-    R: HasOutputCols,
-{
-    type Target = R::OutputColumns;
-
-    fn deref(&self) -> &Self::Target {
-        self.columns.as_ref()
-    }
-}
-
-impl<R> Deref for ReturningUsing<R>
-where
-    R: HasOutputCols,
-{
-    type Target = R::OutputColumns;
-
-    fn deref(&self) -> &Self::Target {
-        self.columns.as_ref()
-    }
-}
-
-fn into_selects(assignments: Rc<RefCell<Selects>>) -> Selects {
-    match Rc::try_unwrap(assignments) {
-        Ok(assignments) => assignments.into_inner(),
-        Err(assignments) => assignments.borrow().clone(),
     }
 }

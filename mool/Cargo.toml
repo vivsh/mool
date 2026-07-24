@@ -10,7 +10,7 @@ description = "A source-first Rust database toolkit for typed SQL queries, migra
 readme = "../README.md"
 
 [package.metadata.docs.rs]
-features = ["sqlite", "migrations"]
+features = ["sqlite", "migrations", "time"]
 no-default-features = true
 
 [features]
@@ -19,9 +19,11 @@ postgres = ["sqlx/postgres", "gaman/postgres", "gaman/fs"]
 mysql = ["sqlx/mysql", "gaman/mysql", "gaman/fs"]
 mariadb = ["sqlx/mysql", "gaman/mariadb", "gaman/fs"]
 sqlite = ["sqlx/sqlite", "gaman/sqlite", "gaman/fs"]
-migrations = ["gaman/fs"]
+migrations = ["gaman/fs", "gaman/db"]
 mock = []
-tracing = ["dep:tracing"]
+sqlx-test = ["sqlx/macros", "sqlx/migrate"]
+tracing = ["dep:tracing", "dep:twox-hash"]
+time = ["dep:time", "sqlx/time"]
 
 [dependencies]
 chrono.workspace = true
@@ -33,18 +35,24 @@ serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
+time = { workspace = true, optional = true }
 tracing = { version = "0.1", optional = true }
-twox-hash.workspace = true
+twox-hash = { workspace = true, optional = true }
 url.workspace = true
-uuid.workspace = true
 
 [dev-dependencies]
+proptest = "1"
+tempfile = "3"
 trybuild = "1"
 sqlx = { workspace = true, features = ["macros", "migrate"] }
+tokio.workspace = true
 
 [[example]]
 name = "filters"
+required-features = ["postgres"]
+
+[[example]]
+name = "batch_insert_returning"
 required-features = ["postgres"]
 
 [[bench]]

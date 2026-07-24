@@ -6,6 +6,11 @@ use super::super::expr::{Expr, IntoExpr};
 use super::super::extension::{DbFunction, func};
 use crate::QueryError;
 
+/// PostgreSQL-specific datetime expressions.
+pub mod datetime {
+    pub use crate::datetime::postgres::*;
+}
+
 /// Creates a typed `unaccent(expr)` expression.
 pub fn unaccent(expr: impl IntoExpr<String>) -> Expr<String> {
     func(Unaccent, (expr.into_expr(),))
@@ -15,7 +20,7 @@ pub fn unaccent(expr: impl IntoExpr<String>) -> Expr<String> {
 struct Unaccent;
 
 impl DbFunction<String> for Unaccent {
-    fn name(&self) -> Result<Cow<'static, str>, QueryError> {
+    fn name(&self, _dialect: crate::SqlDialect) -> Result<Cow<'static, str>, QueryError> {
         Ok(Cow::Borrowed("unaccent"))
     }
 }

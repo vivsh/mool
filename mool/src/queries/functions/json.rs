@@ -101,18 +101,18 @@ impl DbExpression<Json> for JsonPathExpr {
         self.args.clone()
     }
 
-    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError> {
-        let json = ctx.arg(0)?;
-        match (ctx.dialect(), self.op) {
-            (Dialect::Postgres, JsonPathOp::Get) => Ok(format!("({json} #> {})", self.pg_path())),
+    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<(), QueryError> {
+        let (prefix, suffix) = match (ctx.dialect(), self.op) {
+            (Dialect::Postgres, JsonPathOp::Get) => ("(", format!(" #> {})", self.pg_path())),
             (Dialect::Sqlite, JsonPathOp::Get) => {
-                Ok(format!("json_extract({json}, {})", self.json_path()))
+                ("json_extract(", format!(", {})", self.json_path()))
             }
             (Dialect::Mysql, JsonPathOp::Get) => {
-                Ok(format!("JSON_EXTRACT({json}, {})", self.json_path()))
+                ("JSON_EXTRACT(", format!(", {})", self.json_path()))
             }
-            _ => Err(unsupported(ctx.dialect(), "JSON value extraction")),
-        }
+            _ => return Err(unsupported(ctx.dialect(), "JSON value extraction")),
+        };
+        push_wrapped_arg(ctx, prefix, 0, &suffix)
     }
 }
 
@@ -121,29 +121,29 @@ impl DbExpression<String> for JsonPathExpr {
         self.args.clone()
     }
 
-    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError> {
-        let json = ctx.arg(0)?;
-        match (ctx.dialect(), self.op) {
-            (Dialect::Postgres, JsonPathOp::Text) => Ok(format!("({json} #>> {})", self.pg_path())),
+    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<(), QueryError> {
+        let (prefix, suffix) = match (ctx.dialect(), self.op) {
+            (Dialect::Postgres, JsonPathOp::Text) => ("(", format!(" #>> {})", self.pg_path())),
             (Dialect::Sqlite, JsonPathOp::Text) => {
-                Ok(format!("json_extract({json}, {})", self.json_path()))
+                ("json_extract(", format!(", {})", self.json_path()))
             }
-            (Dialect::Mysql, JsonPathOp::Text) => Ok(format!(
-                "JSON_UNQUOTE(JSON_EXTRACT({json}, {}))",
-                self.json_path()
-            )),
+            (Dialect::Mysql, JsonPathOp::Text) => (
+                "JSON_UNQUOTE(JSON_EXTRACT(",
+                format!(", {}))", self.json_path()),
+            ),
             (Dialect::Postgres, JsonPathOp::Type) => {
-                Ok(format!("jsonb_typeof({json} #> {})", self.pg_path()))
+                ("jsonb_typeof(", format!(" #> {}))", self.pg_path()))
             }
             (Dialect::Sqlite, JsonPathOp::Type) => {
-                Ok(format!("json_type({json}, {})", self.json_path()))
+                ("json_type(", format!(", {})", self.json_path()))
             }
-            (Dialect::Mysql, JsonPathOp::Type) => Ok(format!(
-                "JSON_TYPE(JSON_EXTRACT({json}, {}))",
-                self.json_path()
-            )),
-            _ => Err(unsupported(ctx.dialect(), "JSON text expression")),
-        }
+            (Dialect::Mysql, JsonPathOp::Type) => (
+                "JSON_TYPE(JSON_EXTRACT(",
+                format!(", {}))", self.json_path()),
+            ),
+            _ => return Err(unsupported(ctx.dialect(), "JSON text expression")),
+        };
+        push_wrapped_arg(ctx, prefix, 0, &suffix)
     }
 }
 
@@ -152,22 +152,21 @@ impl DbExpression<bool> for JsonPathExpr {
         self.args.clone()
     }
 
-    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError> {
-        let json = ctx.arg(0)?;
-        match (ctx.dialect(), self.op) {
+    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<(), QueryError> {
+        let (prefix, suffix) = match (ctx.dialect(), self.op) {
             (Dialect::Postgres, JsonPathOp::Exists) => {
-                Ok(format!("({json} #> {}) IS NOT NULL", self.pg_path()))
+                ("(", format!(" #> {}) IS NOT NULL", self.pg_path()))
             }
-            (Dialect::Sqlite, JsonPathOp::Exists) => Ok(format!(
-                "json_type({json}, {}) IS NOT NULL",
-                self.json_path()
-            )),
-            (Dialect::Mysql, JsonPathOp::Exists) => Ok(format!(
-                "JSON_CONTAINS_PATH({json}, 'one', {})",
-                self.json_path()
-            )),
-            _ => Err(unsupported(ctx.dialect(), "JSON path existence")),
-        }
+            (Dialect::Sqlite, JsonPathOp::Exists) => {
+                ("json_type(", format!(", {}) IS NOT NULL", self.json_path()))
+            }
+            (Dialect::Mysql, JsonPathOp::Exists) => (
+                "JSON_CONTAINS_PATH(",
+                format!(", 'one', {})", self.json_path()),
+            ),
+            _ => return Err(unsupported(ctx.dialect(), "JSON path existence")),
+        };
+        push_wrapped_arg(ctx, prefix, 0, &suffix)
     }
 }
 
@@ -176,22 +175,34 @@ impl DbExpression<i64> for JsonPathExpr {
         self.args.clone()
     }
 
-    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError> {
-        let json = ctx.arg(0)?;
-        match (ctx.dialect(), self.op) {
+    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<(), QueryError> {
+        let (prefix, suffix) = match (ctx.dialect(), self.op) {
             (Dialect::Postgres, JsonPathOp::ArrayLength) => {
-                Ok(format!("jsonb_array_length({json} #> {})", self.pg_path()))
+                ("jsonb_array_length(", format!(" #> {}))", self.pg_path()))
             }
             (Dialect::Sqlite, JsonPathOp::ArrayLength) => {
-                Ok(format!("json_array_length({json}, {})", self.json_path()))
+                ("json_array_length(", format!(", {})", self.json_path()))
             }
-            (Dialect::Mysql, JsonPathOp::ArrayLength) => Ok(format!(
-                "JSON_LENGTH(JSON_EXTRACT({json}, {}))",
-                self.json_path()
-            )),
-            _ => Err(unsupported(ctx.dialect(), "JSON array length")),
-        }
+            (Dialect::Mysql, JsonPathOp::ArrayLength) => (
+                "JSON_LENGTH(JSON_EXTRACT(",
+                format!(", {}))", self.json_path()),
+            ),
+            _ => return Err(unsupported(ctx.dialect(), "JSON array length")),
+        };
+        push_wrapped_arg(ctx, prefix, 0, &suffix)
     }
+}
+
+fn push_wrapped_arg(
+    ctx: &mut ExprRenderCtx<'_>,
+    prefix: &str,
+    index: usize,
+    suffix: &str,
+) -> Result<(), QueryError> {
+    ctx.push_sql(prefix);
+    ctx.push_arg(index)?;
+    ctx.push_sql(suffix);
+    Ok(())
 }
 
 fn path_parts(path: &str) -> Vec<String> {
@@ -207,8 +218,11 @@ fn quote_sql(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
 
-fn unsupported(dialect: Dialect, feature: &str) -> QueryError {
-    QueryError::BindError(format!("{feature} is not supported for {dialect:?}"))
+fn unsupported(dialect: Dialect, feature: &'static str) -> QueryError {
+    QueryError::Unsupported {
+        dialect: dialect.name(),
+        feature,
+    }
 }
 
 /// PostgreSQL-specific JSON helpers.
@@ -237,8 +251,13 @@ pub mod postgres {
             self.args.clone()
         }
 
-        fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError> {
-            Ok(format!("({} @> {})", ctx.arg(0)?, ctx.arg(1)?))
+        fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<(), QueryError> {
+            ctx.push_sql("(");
+            ctx.push_arg(0)?;
+            ctx.push_sql(" @> ");
+            ctx.push_arg(1)?;
+            ctx.push_sql(")");
+            Ok(())
         }
     }
 }

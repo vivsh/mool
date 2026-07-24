@@ -1,7 +1,7 @@
 //! Common database type definitions for all backends.
 //!
 //! This module provides database and argument type aliases based on the active backend feature.
-//! Exactly one database backend must be enabled at a time.
+//! At most one database backend may be enabled.
 
 #[cfg(all(feature = "postgres", feature = "mysql"))]
 compile_error!(
@@ -31,16 +31,6 @@ compile_error!(
 #[cfg(all(feature = "mariadb", feature = "sqlite"))]
 compile_error!(
     "database backend features are mutually exclusive: disable either `mariadb` or `sqlite`"
-);
-
-#[cfg(not(any(
-    feature = "postgres",
-    feature = "mysql",
-    feature = "mariadb",
-    feature = "sqlite"
-)))]
-compile_error!(
-    "enable exactly one database backend feature: `postgres`, `sqlite`, `mysql`, or `mariadb`"
 );
 
 // PostgreSQL types (default)

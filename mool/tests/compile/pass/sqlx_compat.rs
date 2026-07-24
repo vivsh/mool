@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use mool as db;
 use mool::Model;
 use serde::{Deserialize, Serialize};
@@ -45,7 +43,7 @@ struct CompatRow {
     #[column(primary_key)]
     id: i64,
     #[column(type = "uuid")]
-    external_id: uuid::Uuid,
+    external_id: sqlx::types::Uuid,
     #[column(type = "timestamptz")]
     created_at: chrono::DateTime<chrono::Utc>,
     #[column(nullable)]
@@ -88,6 +86,13 @@ fn main() {
     assert_sqlx_value::<NativePostgresStatus>();
     assert_sqlx_value::<NativeMysqlStatus>();
 
+    #[cfg(feature = "time")]
+    {
+        assert_sqlx_value::<time::OffsetDateTime>();
+        assert_sqlx_value::<time::PrimitiveDateTime>();
+        assert_sqlx_value::<time::Date>();
+    }
+
     let rows = CompatRow::table();
     let _ = db::from(&rows)
         .filter(rows.text_status.eq(db::val(TextStatus::Published)))
@@ -102,5 +107,11 @@ fn main() {
         assert_postgres_array::<IntStatus>();
         assert_postgres_array::<NativePostgresStatus>();
         assert_postgres_array::<NativeMysqlStatus>();
+        #[cfg(feature = "time")]
+        {
+            assert_postgres_array::<time::OffsetDateTime>();
+            assert_postgres_array::<time::PrimitiveDateTime>();
+            assert_postgres_array::<time::Date>();
+        }
     }
 }

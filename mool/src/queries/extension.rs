@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use crate::placeholders::Dialect;
+use crate::SqlDialect;
 
 use super::dialect;
 use super::expr::{Expr, ExprNode};
@@ -18,11 +18,11 @@ use crate::QueryError;
 /// project-specific database functions. The renderer validates the function
 /// for the active dialect before writing SQL.
 pub trait DbFunction<T>: Clone + Send + Sync + 'static {
-    /// Returns the SQL function name.
-    fn name(&self) -> Result<Cow<'static, str>, QueryError>;
+    /// Returns the SQL function name for the selected dialect.
+    fn name(&self, dialect: SqlDialect) -> Result<Cow<'static, str>, QueryError>;
 
     /// Validates the argument count and backend-specific constraints.
-    fn validate(&self, _arity: usize) -> Result<(), QueryError> {
+    fn validate(&self, _dialect: SqlDialect, _arity: usize) -> Result<(), QueryError> {
         Ok(())
     }
 
@@ -43,35 +43,50 @@ pub trait DbExpression<T>: Clone + Send + Sync + 'static {
     }
 
     /// Validates backend-specific constraints before rendering.
-    fn validate(&self) -> Result<(), QueryError> {
+    fn validate(&self, _dialect: SqlDialect) -> Result<(), QueryError> {
         Ok(())
     }
 
-    /// Renders this expression with pre-rendered child expression access.
-    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError>;
+    /// Writes this expression using dialect and structured child access.
+    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<(), QueryError>;
 }
 
 /// Rendering context passed to [`DbExpression`].
 pub struct ExprRenderCtx<'a> {
-    dialect: Dialect,
-    args: &'a [String],
+    dialect: SqlDialect,
+    sql: String,
+    render_arg: &'a mut dyn FnMut(usize, &mut String) -> Result<(), QueryError>,
 }
 
 impl<'a> ExprRenderCtx<'a> {
-    pub(super) fn new(dialect: Dialect, args: &'a [String]) -> Self {
-        Self { dialect, args }
+    pub(super) fn new(
+        dialect: SqlDialect,
+        render_arg: &'a mut dyn FnMut(usize, &mut String) -> Result<(), QueryError>,
+    ) -> Self {
+        Self {
+            dialect,
+            sql: String::new(),
+            render_arg,
+        }
     }
 
-    pub(crate) fn dialect(&self) -> Dialect {
+    /// Returns the dialect currently being rendered.
+    pub fn dialect(&self) -> SqlDialect {
         self.dialect
     }
 
-    /// Returns a pre-rendered child expression.
-    pub fn arg(&self, index: usize) -> Result<&str, QueryError> {
-        self.args
-            .get(index)
-            .map(String::as_str)
-            .ok_or_else(|| QueryError::BindError(format!("missing expression argument {index}")))
+    /// Appends trusted SQL syntax owned by the expression implementation.
+    pub fn push_sql(&mut self, sql: &str) {
+        self.sql.push_str(sql);
+    }
+
+    /// Renders and appends one child expression at this exact occurrence.
+    pub fn push_arg(&mut self, index: usize) -> Result<(), QueryError> {
+        (self.render_arg)(index, &mut self.sql)
+    }
+
+    pub(super) fn finish(self) -> String {
+        self.sql
     }
 }
 
@@ -135,17 +150,17 @@ where
 }
 
 pub(super) trait FunctionSpec: Send + Sync {
-    fn name(&self, dialect: Dialect) -> Result<Cow<'static, str>, QueryError>;
+    fn name(&self, dialect: SqlDialect) -> Result<Cow<'static, str>, QueryError>;
 
-    fn validate(&self, dialect: Dialect, arity: usize) -> Result<(), QueryError>;
+    fn validate(&self, dialect: SqlDialect, arity: usize) -> Result<(), QueryError>;
 
     fn supports_window(&self) -> bool;
 }
 
 pub(super) trait CustomExpressionSpec: Send + Sync {
-    fn validate(&self, dialect: Dialect) -> Result<(), QueryError>;
+    fn validate(&self, dialect: SqlDialect) -> Result<(), QueryError>;
 
-    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError>;
+    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<(), QueryError>;
 }
 
 struct FunctionAdapter<T, F> {
@@ -163,14 +178,13 @@ where
     T: 'static,
     F: DbFunction<T>,
 {
-    fn name(&self, dialect: Dialect) -> Result<Cow<'static, str>, QueryError> {
-        let name = self.function.name()?;
+    fn name(&self, dialect: SqlDialect) -> Result<Cow<'static, str>, QueryError> {
+        let name = self.function.name(dialect)?;
         dialect::render_function(dialect, name)
     }
 
-    fn validate(&self, dialect: Dialect, arity: usize) -> Result<(), QueryError> {
-        let _ = dialect;
-        self.function.validate(arity)
+    fn validate(&self, dialect: SqlDialect, arity: usize) -> Result<(), QueryError> {
+        self.function.validate(dialect, arity)
     }
 
     fn supports_window(&self) -> bool {
@@ -183,12 +197,11 @@ where
     T: 'static,
     E: DbExpression<T>,
 {
-    fn validate(&self, dialect: Dialect) -> Result<(), QueryError> {
-        let _ = dialect;
-        self.expression.validate()
+    fn validate(&self, dialect: SqlDialect) -> Result<(), QueryError> {
+        self.expression.validate(dialect)
     }
 
-    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError> {
+    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<(), QueryError> {
         self.expression.render(ctx)
     }
 }
@@ -252,27 +265,25 @@ impl<T> IntoAnyExpr for &Var<T> {
 }
 
 macro_rules! impl_function_args {
-    ($($name:ident),+ $(,)?) => {
+    ($($name:ident : $index:tt),+ $(,)?) => {
         impl<$($name),+> IntoFunctionArgs for ($($name,)+)
         where
             $($name: IntoAnyExpr,)+
         {
             fn into_function_args(self) -> FunctionArgs {
-                #[allow(non_snake_case)]
-                let ($($name,)+) = self;
                 let mut nodes = Vec::new();
-                $(nodes.extend($name.into_any_expr().nodes);)+
+                $(nodes.extend(self.$index.into_any_expr().nodes);)+
                 FunctionArgs { nodes }
             }
         }
     };
 }
 
-impl_function_args!(A);
-impl_function_args!(A, B);
-impl_function_args!(A, B, C);
-impl_function_args!(A, B, C, D);
-impl_function_args!(A, B, C, D, E);
-impl_function_args!(A, B, C, D, E, F);
+impl_function_args!(A: 0);
+impl_function_args!(A: 0, B: 1);
+impl_function_args!(A: 0, B: 1, C: 2);
+impl_function_args!(A: 0, B: 1, C: 2, D: 3);
+impl_function_args!(A: 0, B: 1, C: 2, D: 3, E: 4);
+impl_function_args!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5);
 
 use super::expr::IntoExpr;

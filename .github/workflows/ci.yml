@@ -9,20 +9,17 @@ permissions:
 
 jobs:
   backend-matrix:
-    name: Test ${{ matrix.backend }}
+    name: Test ${{ matrix.backend }}${{ matrix.time }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         backend: [postgres, sqlite, mysql, mariadb]
+        time: ["", " time"]
     steps:
       - uses: actions/checkout@v4
         with:
           path: mool
-      - uses: actions/checkout@v4
-        with:
-          repository: vivsh/gaman
-          path: gaman
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -31,10 +28,10 @@ jobs:
           workspaces: mool
       - name: Test selected backend
         working-directory: mool
-        run: cargo test -p mool --no-default-features --features "${{ matrix.backend }}"
+        run: cargo test --locked -p mool --no-default-features --features "${{ matrix.backend }}${{ matrix.time }}"
       - name: Clippy selected backend
         working-directory: mool
-        run: cargo clippy -p mool --all-targets --no-deps --no-default-features --features "${{ matrix.backend }}" -- -D warnings
+        run: cargo clippy --locked -p mool --all-targets --no-deps --no-default-features --features "${{ matrix.backend }}${{ matrix.time }}" -- -D warnings
 
   migrations:
     name: Migrations ${{ matrix.backend }}
@@ -46,17 +43,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: mool
-      - uses: actions/checkout@v4
-        with:
-          repository: vivsh/gaman
-          path: gaman
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: mool
       - name: Test migration integration
         working-directory: mool
-        run: cargo test -p mool --no-default-features --features "${{ matrix.backend }} migrations"
+        run: cargo test --locked -p mool --no-default-features --features "${{ matrix.backend }} migrations"
 
   quality:
     name: Formatting, docs, and feature guards
@@ -65,96 +58,156 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: mool
-      - uses: actions/checkout@v4
-        with:
-          repository: vivsh/gaman
-          path: gaman
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
+          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: mool
       - name: Formatting
         working-directory: mool
         run: cargo fmt --all --check
-      - name: Reject missing backend
+      - name: Backendless and test feature contracts
         working-directory: mool
-        run: >-
-          ! cargo check -p mool --no-default-features
+        run: bash scripts/feature-contracts.sh
       - name: Reject multiple backends
         working-directory: mool
         run: >-
-          ! cargo check -p mool --no-default-features --features "postgres sqlite"
+          ! cargo check --locked -p mool --no-default-features --features "postgres sqlite"
       - name: Rustdoc warnings
         working-directory: mool
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc -p mool --no-deps --no-default-features --features "sqlite migrations"
+        run: cargo doc --locked -p mool --no-deps --no-default-features --features "sqlite migrations time"
       - name: Optional tracing surface
         working-directory: mool
-        run: cargo check -p mool --no-default-features --features "postgres tracing"
-      - name: Package macro crates
+        run: cargo check --locked -p mool --no-default-features --features "postgres tracing"
+      - name: Release feature gates
         working-directory: mool
-        run: cargo package -p mool-macros-impl && cargo package -p mool-macros
+        run: >-
+          cargo check --locked -p mool --release --no-default-features --features sqlite &&
+          cargo check --locked -p mool --release --no-default-features --features "sqlite mock"
+      - name: Public examples
+        working-directory: mool
+        run: cargo check --locked -p mool --examples --no-default-features --features "postgres migrations mock time"
+      - name: Macro crate Clippy
+        working-directory: mool
+        run: cargo clippy --locked -p mool-macros-impl -p mool-macros --all-targets -- -D warnings
+      - name: Package publishable crates
+        working-directory: mool
+        run: >-
+          cargo package --locked -p mool-macros-impl &&
+          cargo package --locked -p mool-macros &&
+          cargo package --locked -p mool --features sqlite
 
-  live-smoke:
-    name: Live SQLx smoke
+  msrv:
+    name: Rust 1.88
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: mool
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: mool
+      - name: Check MSRV
+        working-directory: mool
+        run: cargo check --locked -p mool --no-default-features --features "sqlite time migrations"
+
+  dependency-policy:
+    name: Advisories, licenses, sources, and duplicates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories licenses bans sources
+
+  sqlite-live:
+    name: Live SQLite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run live SQLite behavior
+        run: scripts/integration-tests.sh sqlite all
+
+  server-live:
+    name: Live ${{ matrix.backend }} ${{ matrix.version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - backend: postgres
+            version: "15"
+            image: postgres:15
+            port: 5432
+            container_port: 5432
+            health: pg_isready -U postgres
+            url: postgres://postgres:postgres@localhost:5432/mool_tests
+          - backend: postgres
+            version: "18"
+            image: postgres:18
+            port: 5432
+            container_port: 5432
+            health: pg_isready -U postgres
+            url: postgres://postgres:postgres@localhost:5432/mool_tests
+          - backend: mysql
+            version: "8.0"
+            image: mysql:8.0
+            port: 3306
+            container_port: 3306
+            health: mysqladmin ping -h localhost -proot
+            url: mysql://root:root@localhost:3306/mool_tests
+          - backend: mysql
+            version: "8.4"
+            image: mysql:8.4
+            port: 3306
+            container_port: 3306
+            health: mysqladmin ping -h localhost -proot
+            url: mysql://root:root@localhost:3306/mool_tests
+          - backend: mariadb
+            version: "10.11"
+            image: mariadb:10.11
+            port: 3306
+            container_port: 3306
+            health: healthcheck.sh --connect --innodb_initialized
+            url: mysql://root:root@localhost:3306/mool_tests
+          - backend: mariadb
+            version: "11.8"
+            image: mariadb:11.8
+            port: 3306
+            container_port: 3306
+            health: healthcheck.sh --connect --innodb_initialized
+            url: mysql://root:root@localhost:3306/mool_tests
     services:
-      postgres:
-        image: postgres:15
+      database:
+        image: ${{ matrix.image }}
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: mool_tests
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      mysql:
-        image: mysql:8.0
-        env:
           MYSQL_ROOT_PASSWORD: root
           MYSQL_DATABASE: mool_tests
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd "mysqladmin ping -h localhost -proot"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-      mariadb:
-        image: mariadb:10.11
-        env:
           MARIADB_ROOT_PASSWORD: root
           MARIADB_DATABASE: mool_tests
         ports:
-          - 3307:3306
+          - "${{ matrix.port }}:${{ matrix.container_port }}"
         options: >-
-          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-cmd "${{ matrix.health }}"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: mool
-      - uses: actions/checkout@v4
-        with:
-          repository: vivsh/gaman
-          path: gaman
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: mool
-      - name: Run live CRUD and transaction tests
-        working-directory: mool
+      - name: Run live backend behavior
         env:
-          POSTGRES_DATABASE_URL: postgres://postgres:postgres@localhost:5432/mool_tests
-          MYSQL_DATABASE_URL: mysql://root:root@localhost:3306/mool_tests
-          MARIADB_DATABASE_URL: mysql://root:root@localhost:3307/mool_tests
-        run: scripts/integration-tests.sh all all
+          DATABASE_URL: ${{ matrix.url }}
+        run: scripts/integration-tests.sh "${{ matrix.backend }}" all

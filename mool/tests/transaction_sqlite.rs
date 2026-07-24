@@ -33,47 +33,34 @@ async fn count(pool: &mut db::DbPool) -> i64 {
         .expect("count transaction rows")
 }
 
-/// Verifies the pool transaction helper commits only a successful callback.
+/// Verifies an explicitly committed SQLite transaction persists its writes.
 #[tokio::test]
-async fn transaction_helper_commits_success() {
+async fn explicit_transaction_commit_persists_writes() {
     let mut pool = pool().await;
-    pool.transaction(|transaction| {
-        Box::pin(async move {
-            transaction
-                .execute(statement(
-                    "INSERT INTO tx_items (id, name) VALUES (1, 'one')",
-                ))
-                .await?;
-            Ok(())
-        })
-    })
-    .await
-    .expect("successful transaction");
+    let mut transaction = pool.begin().await.expect("begin transaction");
+    transaction
+        .execute(statement(
+            "INSERT INTO tx_items (id, name) VALUES (1, 'one')",
+        ))
+        .await
+        .expect("insert row");
+    transaction.commit().await.expect("commit transaction");
 
     assert_eq!(count(&mut pool).await, 1);
 }
 
-/// Verifies callback errors cause an explicit rollback and preserve the callback error.
+/// Verifies an explicit SQLite rollback discards prior writes.
 #[tokio::test]
-async fn transaction_helper_rolls_back_error() {
+async fn explicit_transaction_rollback_discards_writes() {
     let mut pool = pool().await;
-    let error = pool
-        .transaction(|transaction| {
-            Box::pin(async move {
-                transaction
-                    .execute(statement(
-                        "INSERT INTO tx_items (id, name) VALUES (1, 'one')",
-                    ))
-                    .await?;
-                Err::<(), _>(db::DbError::QuerySet(db::QueryError::MissingBinding(
-                    "expected-test-error".to_string(),
-                )))
-            })
-        })
+    let mut transaction = pool.begin().await.expect("begin transaction");
+    transaction
+        .execute(statement(
+            "INSERT INTO tx_items (id, name) VALUES (1, 'one')",
+        ))
         .await
-        .expect_err("callback error must roll back");
-
-    assert_eq!(error.code(), "statement_error");
+        .expect("insert row");
+    transaction.rollback().await.expect("rollback transaction");
     assert_eq!(count(&mut pool).await, 0);
 }
 

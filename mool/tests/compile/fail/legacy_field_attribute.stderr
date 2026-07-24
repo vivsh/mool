@@ -1,0 +1,5 @@
+error: cannot find attribute `field` in this scope
+ --> tests/compile/fail/legacy_field_attribute.rs:6:7
+  |
+6 |     #[field(skip)]
+  |       ^^^^^

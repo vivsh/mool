@@ -1,0 +1,5 @@
+error: reference target must be 'table.column'
+ --> tests/compile/fail/model_malformed_reference.rs:8:5
+  |
+8 |     parent_id: i64,
+  |     ^^^^^^^^^

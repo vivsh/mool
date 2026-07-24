@@ -1,7 +1,13 @@
 use quote::quote;
 use std::collections::HashSet;
-use syn::{DeriveInput, GenericArgument, PathArguments, Type, TypePath};
+use syn::{DeriveInput, Type};
 
+use crate::record_types::{
+    is_flatten, is_json, is_reference, is_selectable, is_skip, option_inner_type,
+};
+use crate::record_types::{
+    is_insertable, is_option, is_primary_key, is_updateable, is_write_candidate,
+};
 use crate::schemable::{FieldMeta, ParsedStruct, to_snake_case};
 use crate::typed_handles::gen_typed_handles;
 
@@ -14,13 +20,14 @@ pub fn derive_record(
         Ok(input) => input,
         Err(err) => return err.to_compile_error(),
     };
-    derive_record_impl(&input, runtime_path)
+    derive_record_impl(&input, runtime_path, &[])
 }
 
 /// Internal implementation of Record derive macro.
 pub(crate) fn derive_record_impl(
     input: &DeriveInput,
     runtime_path: proc_macro2::TokenStream,
+    model_primary_keys: &[String],
 ) -> proc_macro2::TokenStream {
     let parsed = match ParsedStruct::from_derive_input(input.clone()) {
         Ok(p) => p,
@@ -42,9 +49,27 @@ pub(crate) fn derive_record_impl(
     let field_inits = gen_field_initializers(&parsed.fields, &crate_path);
     let field_inits_unordered = gen_field_initializers_unordered(&parsed.fields, &crate_path);
     let column_names = gen_record_column_names(&parsed.fields, &crate_path);
-    let bind_names = gen_record_bind_column_names(&parsed.fields, &crate_path);
-    let bind_stmts = gen_bind_statements(&parsed.fields, &crate_path);
-    let bind_selected_arms = gen_bind_selected_arms(&parsed.fields, &crate_path);
+    let insert_names = gen_write_column_names(&parsed.fields, &crate_path, BindMode::Insert, &[]);
+    let update_names = gen_write_column_names(
+        &parsed.fields,
+        &crate_path,
+        BindMode::Update,
+        model_primary_keys,
+    );
+    let insert_stmts = gen_bind_statements(&parsed.fields, &crate_path, BindMode::Insert, &[]);
+    let update_stmts = gen_bind_statements(
+        &parsed.fields,
+        &crate_path,
+        BindMode::Update,
+        model_primary_keys,
+    );
+    let insert_arms = gen_bind_selected_arms(&parsed.fields, &crate_path, BindMode::Insert, &[]);
+    let update_arms = gen_bind_selected_arms(
+        &parsed.fields,
+        &crate_path,
+        BindMode::Update,
+        model_primary_keys,
+    );
     let (batch_column_type, batch_column_values) = gen_batch_columns(&parsed.fields, &crate_path);
     let typed_handles = gen_typed_handles(&parsed, &crate_path);
 
@@ -61,9 +86,14 @@ pub(crate) fn derive_record_impl(
                     #(#column_names)*
                     cols
                 };
-                let bind_columns = {
+                let insert_columns = {
                     let mut cols = ::std::vec::Vec::new();
-                    #(#bind_names)*
+                    #(#insert_names)*
+                    cols
+                };
+                let update_columns = {
+                    let mut cols = ::std::vec::Vec::new();
+                    #(#update_names)*
                     cols
                 };
                 #crate_path::RecordSchema::new(#table_name)
@@ -71,25 +101,50 @@ pub(crate) fn derive_record_impl(
                     .root(#scan_root)
                     .references(references)
                     .columns(columns)
-                    .bind_columns(bind_columns)
+                    .insert_columns(insert_columns)
+                    .update_columns(update_columns)
             }
 
-            fn record_bind_values(
+            fn record_bind_insert_values(
                 &self,
                 args: &mut #crate_path::backend::Arguments<'static>,
             ) -> Result<(), #crate_path::sqlx::Error> {
-                #(#bind_stmts)*
+                #(#insert_stmts)*
                 Ok(())
             }
 
-            fn record_bind_selected(
+            fn record_bind_insert_selected(
                 &self,
                 columns: &[&str],
                 args: &mut #crate_path::backend::Arguments<'static>,
             ) -> Result<(), #crate_path::sqlx::Error> {
                 for column in columns {
                     match *column {
-                        #(#bind_selected_arms)*
+                        #(#insert_arms)*
+                        other => {
+                            return Err(#crate_path::sqlx::Error::ColumnNotFound(other.to_string()));
+                        }
+                    }
+                }
+                Ok(())
+            }
+
+            fn record_bind_update_values(
+                &self,
+                args: &mut #crate_path::backend::Arguments<'static>,
+            ) -> Result<(), #crate_path::sqlx::Error> {
+                #(#update_stmts)*
+                Ok(())
+            }
+
+            fn record_bind_update_selected(
+                &self,
+                columns: &[&str],
+                args: &mut #crate_path::backend::Arguments<'static>,
+            ) -> Result<(), #crate_path::sqlx::Error> {
+                for column in columns {
+                    match *column {
+                        #(#update_arms)*
                         other => {
                             return Err(#crate_path::sqlx::Error::ColumnNotFound(other.to_string()));
                         }
@@ -181,7 +236,7 @@ fn gen_where_clause(
             });
         }
 
-        if !is_bindable(field) {
+        if !is_insertable(field) && !is_updateable(field, &[]) {
             continue;
         }
 
@@ -214,7 +269,7 @@ fn gen_batch_columns(
 ) -> (proc_macro2::TokenStream, proc_macro2::TokenStream) {
     let mut types = Vec::new();
     let mut values = Vec::new();
-    for field in fields.iter().filter(|field| is_bindable(field)) {
+    for field in fields.iter().filter(|field| is_insertable(field)) {
         let Some(ident) = field.ident.as_ref() else {
             continue;
         };
@@ -550,162 +605,6 @@ fn gen_scalar_init(ident: &syn::Ident) -> proc_macro2::TokenStream {
     }
 }
 
-/// Check if field should be skipped (column only).
-pub(super) fn is_skip(field: &FieldMeta) -> bool {
-    field.column.skip || field.column.prefetch.is_some()
-}
-
-/// Check if field should be flattened (column only).
-pub(super) fn is_flatten(field: &FieldMeta) -> bool {
-    field.column.flatten
-}
-
-/// Check if field is a reference (column only).
-pub(super) fn is_reference(field: &FieldMeta) -> bool {
-    field
-        .column
-        .reference
-        .as_ref()
-        .is_some_and(|reference| reference.is_join_reference())
-        || field.column.backref.is_some()
-}
-
-fn is_bindable(field: &FieldMeta) -> bool {
-    !is_skip(field)
-        && !is_reference(field)
-        && !field.column.read_only
-        && !field.column.skip_bind
-        && field.column.insertable.unwrap_or(true)
-        && field.column.updatable.unwrap_or(true)
-}
-
-fn is_option(ty: &Type) -> bool {
-    option_inner_type(ty).is_some()
-}
-
-pub(super) fn option_inner_type(ty: &Type) -> Option<&Type> {
-    let Type::Path(path) = ty else {
-        return None;
-    };
-    if !is_canonical_option(path) {
-        return None;
-    }
-    let segment = path.path.segments.last()?;
-    let PathArguments::AngleBracketed(args) = &segment.arguments else {
-        return None;
-    };
-    let Some(GenericArgument::Type(inner)) = args.args.first() else {
-        return None;
-    };
-    if is_u8_type(inner) {
-        return None;
-    }
-    Some(inner)
-}
-
-fn is_u8_type(ty: &Type) -> bool {
-    let Type::Path(path) = ty else {
-        return false;
-    };
-    if path.qself.is_some() {
-        return false;
-    }
-    let mut segments = path
-        .path
-        .segments
-        .iter()
-        .map(|segment| segment.ident.to_string());
-    matches!(
-        (
-            segments.next(),
-            segments.next(),
-            segments.next(),
-            segments.next()
-        ),
-        (Some(first), None, None, None) if first == "u8"
-    )
-}
-
-pub(super) fn array_inner_type(ty: &Type) -> Option<&Type> {
-    let candidate = option_inner_type(ty).unwrap_or(ty);
-    let Type::Path(path) = candidate else {
-        return None;
-    };
-    if !is_canonical_vec(path) {
-        return None;
-    }
-    let segment = path.path.segments.last()?;
-    let PathArguments::AngleBracketed(args) = &segment.arguments else {
-        return None;
-    };
-    let Some(GenericArgument::Type(inner)) = args.args.first() else {
-        return None;
-    };
-    Some(inner)
-}
-
-fn is_canonical_option(path: &TypePath) -> bool {
-    if path.qself.is_some() {
-        return false;
-    }
-    let mut segments = path
-        .path
-        .segments
-        .iter()
-        .map(|segment| segment.ident.to_string());
-    match (
-        segments.next(),
-        segments.next(),
-        segments.next(),
-        segments.next(),
-    ) {
-        (Some(first), None, None, None) => first == "Option",
-        (Some(first), Some(second), Some(third), None) => {
-            (first == "std" || first == "core") && second == "option" && third == "Option"
-        }
-        _ => false,
-    }
-}
-
-fn is_canonical_vec(path: &TypePath) -> bool {
-    if path.qself.is_some() {
-        return false;
-    }
-    let mut segments = path
-        .path
-        .segments
-        .iter()
-        .map(|segment| segment.ident.to_string());
-    match (
-        segments.next(),
-        segments.next(),
-        segments.next(),
-        segments.next(),
-    ) {
-        (Some(first), None, None, None) => first == "Vec",
-        (Some(first), Some(second), Some(third), None) => {
-            (first == "std" || first == "alloc") && second == "vec" && third == "Vec"
-        }
-        _ => false,
-    }
-}
-
-/// Check if field should be JSON-serialized (column only).
-pub(super) fn is_json(field: &FieldMeta) -> bool {
-    field.column.json
-        || field
-            .column
-            .sql_type
-            .as_ref()
-            .map(|ty| matches!(ty.value().to_ascii_lowercase().as_str(), "json" | "jsonb"))
-            .unwrap_or(false)
-}
-
-/// Check if field is selectable (column attr only, None means true).
-pub(super) fn is_selectable(field: &FieldMeta) -> bool {
-    field.column.selectable.unwrap_or(true)
-}
-
 /// Generate the record_column_names implementation.
 fn gen_record_column_names(
     fields: &[FieldMeta],
@@ -758,18 +657,31 @@ fn gen_record_column_names(
     stmts
 }
 
-fn gen_record_bind_column_names(
+#[derive(Clone, Copy)]
+enum BindMode {
+    Insert,
+    Update,
+}
+
+fn gen_write_column_names(
     fields: &[FieldMeta],
     crate_path: &proc_macro2::TokenStream,
+    mode: BindMode,
+    primary_keys: &[String],
 ) -> Vec<proc_macro2::TokenStream> {
     fields
         .iter()
-        .filter(|field| is_bindable(field))
+        .filter(|field| bindable_for(field, mode, primary_keys, false))
         .filter_map(|field| {
             if is_flatten(field) {
                 let ty = &field.ty;
-                return Some(quote! {
-                    cols.extend(<#ty as #crate_path::Record>::record_bind_column_names());
+                return Some(match mode {
+                    BindMode::Insert => quote! {
+                        cols.extend(<#ty as #crate_path::Record>::record_insert_column_names());
+                    },
+                    BindMode::Update => quote! {
+                        cols.extend(<#ty as #crate_path::Record>::record_update_column_names());
+                    },
                 });
             }
             let col_name = field
@@ -788,16 +700,23 @@ fn gen_record_bind_column_names(
 fn gen_bind_statements(
     fields: &[FieldMeta],
     crate_path: &proc_macro2::TokenStream,
+    mode: BindMode,
+    primary_keys: &[String],
 ) -> Vec<proc_macro2::TokenStream> {
     fields
         .iter()
-        .filter(|field| is_bindable(field))
+        .filter(|field| bindable_for(field, mode, primary_keys, false))
         .filter_map(|field| {
             let ident = field.ident.as_ref()?;
             if is_flatten(field) {
                 let ty = &field.ty;
-                return Some(quote! {
-                    <#ty as #crate_path::Record>::record_bind_values(&self.#ident, args)?;
+                return Some(match mode {
+                    BindMode::Insert => quote! {
+                        <#ty as #crate_path::Record>::record_bind_insert_values(&self.#ident, args)?;
+                    },
+                    BindMode::Update => quote! {
+                        <#ty as #crate_path::Record>::record_bind_update_values(&self.#ident, args)?;
+                    },
                 });
             }
             if is_json(field) {
@@ -823,24 +742,33 @@ fn gen_bind_statements(
 fn gen_bind_selected_arms(
     fields: &[FieldMeta],
     crate_path: &proc_macro2::TokenStream,
+    mode: BindMode,
+    primary_keys: &[String],
 ) -> Vec<proc_macro2::TokenStream> {
     fields
         .iter()
-        .filter(|field| is_bindable(field))
+        .filter(|field| bindable_for(field, mode, primary_keys, true))
         .filter_map(|field| {
             let ident = field.ident.as_ref()?;
             if is_flatten(field) {
                 let ty = &field.ty;
-                return Some(quote! {
-                    nested if <#ty as #crate_path::Record>::record_bind_column_names()
-                        .iter()
-                        .any(|name| name == nested) => {
-                        <#ty as #crate_path::Record>::record_bind_selected(
-                            &self.#ident,
-                            &[nested],
-                            args,
-                        )?;
-                    }
+                return Some(match mode {
+                    BindMode::Insert => quote! {
+                        nested if <#ty as #crate_path::Record>::record_insert_column_names()
+                            .iter().any(|name| name == nested) => {
+                            <#ty as #crate_path::Record>::record_bind_insert_selected(
+                                &self.#ident, &[nested], args,
+                            )?;
+                        }
+                    },
+                    BindMode::Update => quote! {
+                        nested if <#ty as #crate_path::Record>::record_update_column_names()
+                            .iter().any(|name| name == nested) => {
+                            <#ty as #crate_path::Record>::record_bind_update_selected(
+                                &self.#ident, &[nested], args,
+                            )?;
+                        }
+                    },
                 });
             }
             let col_name = field
@@ -867,6 +795,23 @@ fn gen_bind_selected_arms(
             })
         })
         .collect()
+}
+
+fn bindable_for(
+    field: &FieldMeta,
+    mode: BindMode,
+    primary_keys: &[String],
+    include_update_keys: bool,
+) -> bool {
+    match mode {
+        BindMode::Insert => is_insertable(field),
+        BindMode::Update => {
+            is_updateable(field, primary_keys)
+                || (include_update_keys
+                    && is_write_candidate(field)
+                    && is_primary_key(field, primary_keys))
+        }
+    }
 }
 
 /// Generate initialization for flattened field (unordered).

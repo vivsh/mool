@@ -1,0 +1,20 @@
+error[E0277]: the trait bound `NaiveDateTime: SqlTimestamp` is not satisfied
+ --> tests/compile/fail/datetime_naive_portable.rs:5:13
+  |
+5 |     let _ = db::funcs::datetime::trunc_day(naive);
+  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `SqlTimestamp` is not implemented for `NaiveDateTime`
+  |
+  = help: the following other types implement trait `SqlTimestamp`:
+            DateTime<Utc>
+            Option<DateTime<Utc>>
+note: required by a bound in `trunc_day`
+ --> src/datetime/portable.rs
+  |
+  | / trunc_fn!(
+  | |     trunc_day,
+  | |     --------- required by a bound in this function
+  | |     Day,
+  | |     "Truncates a UTC timestamp to the start of its day."
+  | | );
+  | |_^ required by this bound in `trunc_day`
+  = note: this error originates in the macro `trunc_fn` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -34,6 +34,58 @@ It is ORM-like where that saves work, but it is not an active-record ORM.
 Models do not own a connection or save themselves. You write the operation,
 Mool provides the typed metadata, builder, and SQLx execution path.
 
+## Install
+
+Select at most one database backend for query execution:
+
+```toml
+mool = { version = "0.2", features = ["postgres"] }
+# or: "sqlite", "mysql", "mariadb"
+```
+
+Mool also compiles without a backend for applications that only register schema
+and migration metadata, such as a memory-only framework mode. Query builders,
+pools, sessions, and selected-dialect schema helpers require one backend.
+
+Common optional features:
+
+```toml
+mool = { version = "0.2", features = ["postgres", "migrations"] }
+mool = { version = "0.2", features = ["sqlite", "mock"] }
+mool = { version = "0.2", features = ["postgres", "time"] }
+```
+
+For SQLx-managed live test databases, enable `sqlx-test` only in the consuming
+application's dev dependency:
+
+```toml
+[dev-dependencies]
+mool = { version = "0.2", features = ["postgres", "sqlx-test"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "macros", "migrate"] }
+```
+
+This makes `#[mool::sqlx::test]` available without adding SQLx test macro
+support to a release build. SQLx's attribute expansion requires the consuming
+crate to declare `sqlx` directly in `dev-dependencies`.
+
+Automatic migrations are supported for PostgreSQL and SQLite. MySQL and MariaDB
+are available as query backends; their migration workflow is still maturing.
+Do not use `--all-features`: backend features are exclusive.
+
+`mool::prelude::*` is the normal application import. It includes the common
+query and model API plus only the extensions supported by the chosen backend.
+
+## Getting Started
+
+Set the connection URL, then create a Mool pool inside your async application:
+
+```sh
+export DATABASE_URL='postgres://app:password@localhost:5432/blog'
+```
+
+Define a table-backed model and run a typed query. `DbPool` owns the selected
+SQLx pool; every Mool executable accepts it as a `DbSession`.
+
 ```rust
 use mool as db;
 use mool::prelude::*;
@@ -46,39 +98,26 @@ struct Post {
     author_id: i64,
     title: String,
     published: bool,
+    published_at: chrono::DateTime<chrono::Utc>,
 }
 
-let posts = Post::table();
-let rows = db::from(&posts)
-    .filter(posts.published.eq(db::val(true)))
-    .order_by(posts.id.desc())
-    .all::<Post>()
-    .exec(&mut pool)
-    .await?;
+async fn published_posts() -> Result<Vec<Post>, db::DbError> {
+    let conf = db::DbConf::from_env()?;
+    let mut pool = db::DbPool::from_conf(&conf).await?;
+    let posts = Post::table();
+
+    db::from(&posts)
+        .filter(posts.published.eq(db::val(true)))
+        .order_by(posts.id.desc())
+        .all::<Post>()
+        .exec(&mut pool)
+        .await
+}
 ```
 
-## Install
-
-Enable exactly one database backend:
-
-```toml
-mool = { version = "0.2", features = ["postgres"] }
-# or: "sqlite", "mysql", "mariadb"
-```
-
-Common optional features:
-
-```toml
-mool = { version = "0.2", features = ["postgres", "migrations"] }
-mool = { version = "0.2", features = ["sqlite", "mock"] }
-```
-
-Automatic migrations are supported for PostgreSQL and SQLite. MySQL and MariaDB
-are available as query backends; their migration workflow is still maturing.
-Do not use `--all-features`: backend features are exclusive.
-
-`mool::prelude::*` is the normal application import. It includes the common
-query and model API plus only the extensions supported by the chosen backend.
+Use `DbPool::from_pool(...)` when the application already owns a SQLx pool.
+`DbPool::as_sqlx()` and `DbTransaction::as_sqlx()` retain direct access to
+SQLx for backend facilities outside Mool's typed query API.
 
 ## Core Workflow
 
@@ -201,14 +240,50 @@ two-query prefetch when that is more efficient than a join.
 
 ### Subqueries, CTEs, and SQL functions
 
-Derived sources remain typed. Build a query, turn it into a `subquery()` or
-`cte()`, and use its output handles in the parent query. The expression API
-covers comparisons, boolean logic, `IN`, null checks, `CASE`, casts, common
-functions, aggregates, windows, and backend-specific capabilities.
+Derived sources remain typed. Build a query, turn it into a `subquery_as(...)`
+or `cte_as(...)`, and use its output handles in the parent query. The expression
+API covers comparisons, boolean logic, `IN`, null checks, `CASE`, casts,
+common functions, aggregates, windows, and backend-specific capabilities.
+
+Composition itself is infallible. Invalid names, source ownership, unsupported
+combinations, and missing bindings surface from `.plan()`, `.plans()`, or
+`.exec()`, so queries can be assembled and passed between application layers
+without intermediate error plumbing.
 
 Unsupported dialect features are absent at compile time rather than accepted
 and rejected later. For example, PostgreSQL-only helpers such as `ILIKE`,
 arrays, `DISTINCT ON`, and `RETURNING` are exposed only in PostgreSQL builds.
+
+### Dates, times, and intervals
+
+Datetime helpers are typed expressions, so they compose with filters,
+projections, grouping, ordering, CTEs, and updates. Portable operations use UTC
+and accept Chrono, optional `time` types, and standard or Tokio durations:
+
+```rust
+let recent = db::from(&posts)
+    .filter(posts.published_at.lte(
+        db::funcs::datetime::now::<chrono::DateTime<chrono::Utc>>(),
+    ))
+    .filter(
+        db::funcs::datetime::extract_year(posts.published_at.clone())
+            .eq(db::val(2026)),
+    )
+    .order_by(db::funcs::datetime::trunc_day(posts.published_at.clone()).desc());
+
+let expires_at = db::funcs::datetime::add(
+    posts.published_at.clone(),
+    tokio::time::Duration::from_secs(300),
+);
+```
+
+Fixed-duration arithmetic requires exactly representable millisecond values;
+lossy or overflowing durations fail during planning. `now()` means database
+statement time on every backend. Calendar months,
+time-zone conversion, native intervals, and formatting live in the selected
+backend module, such as `funcs::postgres::datetime` or
+`funcs::sqlite::datetime`. Mool-created PostgreSQL and MySQL-family pools use
+UTC sessions; externally managed pools must be configured equivalently.
 
 ### Transactions and raw SQL
 
@@ -237,6 +312,9 @@ let count = db::query("SELECT COUNT(*) FROM posts WHERE author_id = :author_id")
     .scalar::<i64>(&mut pool)
     .await?;
 ```
+
+Named raw binds are checked for missing, unused, and duplicate names before a
+statement reaches SQLx.
 
 ## SQL Enums
 
@@ -294,6 +372,33 @@ Register the resulting desired schema and embedded history with
 `MigrationRegistry` at the application boundary. The generated migration is a
 normal reviewed file, not an opaque runtime schema change.
 
+Frameworks can own command handling without importing Gaman. Build one runner
+from the registry, serialize commands through an async mutex, and construct the
+public Mool command protocol directly:
+
+```rust
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use mool as db;
+use db::migrations::engine::{
+    ApplyCommand, MigrationCommand, NativeRunnerFactory,
+};
+
+let runner = NativeRunnerFactory::from_store(config, Arc::new(registry)).build();
+let runner = Arc::new(Mutex::new(runner));
+
+let result = runner
+    .lock()
+    .await
+    .run_command(&MigrationCommand::Apply(ApplyCommand::Plan))
+    .await?;
+```
+
+For migration generation, construct `MigrationCommand::Make(...)` with
+`registry.schema_for(None)?`. A non-interactive host should return structured
+clarifications from `MigrationCommandError::NeedsInput` and resubmit the command
+with decisions rather than prompting internally.
+
 ## Testing
 
 Mool supports database-free testing through planned SQL and `MockDbSession`.
@@ -301,8 +406,9 @@ The mock records ordered statements and can return planned query responses, so
 unit tests can assert application behavior without booting a database.
 
 ```rust
-let plan = db::from(&Post::table())
-    .filter(Post::table().published.eq(db::val(true)))
+let posts = Post::table();
+let plan = db::from(&posts)
+    .filter(posts.published.eq(db::val(true)))
     .all::<Post>()
     .plan()?;
 

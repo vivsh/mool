@@ -4,11 +4,20 @@
 //! the execution engine, so this module exposes its stable integration types
 //! through Mool rather than requiring applications to couple to Gaman paths.
 
-pub use gaman::core::{MigrationStore, TrackingStore};
-pub use gaman::runner_factory::{DirectoryMigrationStore, EmbeddedMigrationStore};
+pub use gaman::core::{
+    Answer, Clarification, ClarificationKind, ClarificationMessage, Decision, MigrationStore,
+    OptionAction, PromptEngine, Severity, TrackingStore,
+};
+pub use gaman::runner_factory::{
+    DirectoryMigrationStore, EmbeddedMigrationStore, LazyExecutor, NativeMigrationStore,
+    NativeRunnerFactory,
+};
 pub use gaman::{
-    ApplyCommand, CommandResult, DatabaseTrackingStore, EngineError, Executor, ExecutorError,
-    MakeCommand, MakeResult, MigrationEngine, MigrationRunner, SchemaInspector,
+    ApplyCommand, COMMAND_PROTOCOL_VERSION, CommandDiagnostic, CommandEnvelope, CommandFailure,
+    CommandRequest, CommandResponse, CommandResult, Config, DatabaseTrackingStore, DiagnosticCode,
+    EngineError, Executor, ExecutorError, MakeCommand, MakeResult, MigrationEngine,
+    MigrationRunner, RepairOptions, SchemaCheckFailure, SchemaCheckInput, SchemaCheckResult,
+    SchemaCheckStatus, SchemaInspector, SqlInput, TlsMode,
 };
 pub use gaman::{RunnerCommand as MigrationCommand, RunnerCommandError as MigrationCommandError};
 

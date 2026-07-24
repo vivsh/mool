@@ -57,9 +57,9 @@ pub(super) fn source_label(source: &Source) -> String {
     table_name(schema, name)
 }
 
-pub(super) fn source_alias(source: &Source, table_alias: &str) -> String {
+pub(super) fn source_alias(source: &Source, _table_alias: &str) -> String {
     match source {
-        Source::Table(_) => table_alias.to_string(),
+        Source::Table(table) => table.data.name.to_string(),
         Source::Cte(cte) => cte.data.name.to_string(),
         Source::Subquery(subquery) => subquery.data.name.to_string(),
     }
@@ -130,14 +130,17 @@ pub(super) fn validate_table_source(table: &Table, source: &Source) -> Result<()
     }
 }
 
-pub(super) fn validate_source_identity(name: &str, source: &Source) -> Result<(), QueryError> {
-    if source_key(source).2 == name {
+pub(super) fn validate_source_identity(
+    expected: &Source,
+    actual: &Source,
+) -> Result<(), QueryError> {
+    if expected == actual {
         return Ok(());
     }
     Err(QueryError::BindError(format!(
         "source column belongs to '{}', not '{}'",
-        name,
-        source_label(source)
+        source_label(expected),
+        source_label(actual)
     )))
 }
 
@@ -162,7 +165,7 @@ pub(super) fn is_logical_root(reference: &str, source: &Source, root_alias: Opti
     {
         return true;
     }
-    reference == source_alias(source, &singular_alias(source_key(source).2))
+    reference == source_alias(source, source_key(source).2)
 }
 
 pub(super) fn validate_source_column(column: &SourceColumnRef) -> Result<(), QueryError> {
@@ -210,7 +213,7 @@ pub(super) fn validate_expr_owners(
     match node {
         ExprNode::Column(column) => match &column.owner {
             ColumnOwner::Root(table) => validate_table_source(table, source),
-            ColumnOwner::Source(name) => validate_source_identity(name, source),
+            ColumnOwner::Source(owner) => validate_source_identity(owner, source),
             ColumnOwner::Reference(reference) if allow_references => {
                 let Some(references) = references else {
                     return Err(QueryError::UnknownAlias(reference.to_string()));
@@ -379,10 +382,10 @@ pub(super) fn validate_conflict_columns(
         validate_identifier(&column.name)?;
         match &column.owner {
             ColumnOwner::Root(table) => validate_table_identity(table, source)?,
-            ColumnOwner::Source(source) => {
+            ColumnOwner::Source(owner) => {
                 return Err(QueryError::BindError(format!(
                     "upsert conflict column cannot use source '{}'",
-                    source
+                    source_label(owner)
                 )));
             }
             ColumnOwner::Reference(reference) => {
@@ -489,11 +492,4 @@ pub(super) fn to_identifier(value: &str) -> String {
         out.insert(0, '_');
     }
     out
-}
-
-pub(super) fn singular_alias(name: &str) -> String {
-    match name.strip_suffix('s') {
-        Some(name) => name.to_string(),
-        None => name.to_string(),
-    }
 }

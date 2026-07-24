@@ -10,20 +10,10 @@ use super::super::validate::validate_identifier;
 use crate::QueryError;
 
 #[cfg(any(feature = "sqlite", feature = "mysql", feature = "mariadb"))]
-pub(super) fn unsupported(dialect: Dialect, feature: &str) -> QueryError {
-    QueryError::BindError(format!(
-        "{feature} is not supported for {}",
-        dialect_name(dialect)
-    ))
-}
-
-#[cfg(any(feature = "sqlite", feature = "mysql", feature = "mariadb"))]
-pub(super) fn dialect_name(dialect: Dialect) -> &'static str {
-    match dialect {
-        Dialect::Postgres => "postgres",
-        Dialect::Sqlite => "sqlite",
-        Dialect::Mysql => "mysql",
-        Dialect::Mariadb => "mariadb",
+pub(super) fn unsupported(dialect: Dialect, feature: &'static str) -> QueryError {
+    QueryError::Unsupported {
+        dialect: dialect.name(),
+        feature,
     }
 }
 

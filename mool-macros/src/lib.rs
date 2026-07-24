@@ -9,12 +9,12 @@ pub fn embedded_migrations(input: TokenStream) -> TokenStream {
     embedded::embedded_migrations(input, runtime_path())
 }
 
-#[proc_macro_derive(Record, attributes(field, column, table, db))]
+#[proc_macro_derive(Record, attributes(column, table, db))]
 pub fn derive_record(input: TokenStream) -> TokenStream {
     mool_macros_impl::record::derive_record(input.into(), runtime_path()).into()
 }
 
-#[proc_macro_derive(Model, attributes(field, column, table, db))]
+#[proc_macro_derive(Model, attributes(column, table, db))]
 pub fn derive_model(input: TokenStream) -> TokenStream {
     mool_macros_impl::model::derive_model(input.into(), runtime_path()).into()
 }

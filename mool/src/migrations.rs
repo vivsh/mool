@@ -7,6 +7,9 @@ use std::{
 #[cfg(feature = "migrations")]
 use thiserror::Error;
 
+#[cfg(feature = "migrations")]
+use gaman::{core::MigrationStore, runner_factory::DirectoryMigrationStore};
+
 /// Command-runner types for applications that integrate Mool migrations.
 #[cfg(feature = "migrations")]
 pub mod engine;
@@ -30,12 +33,23 @@ pub struct MigrationSource {
     migrations: &'static EmbeddedMigrations,
 }
 
+/// A fallible static schema builder registered with a migration namespace.
+#[cfg(feature = "migrations")]
+pub type SchemaSourceBuilder = fn() -> Result<Schema, SchemaLoadError>;
+
 /// A schema contribution associated with a migration namespace.
 #[cfg(feature = "migrations")]
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct SchemaSource {
     namespace: Option<&'static str>,
-    build: fn() -> Schema,
+    source: SchemaSourceKind,
+}
+
+#[cfg(feature = "migrations")]
+#[derive(Clone)]
+enum SchemaSourceKind {
+    Builder(SchemaSourceBuilder),
+    Value(Schema),
 }
 
 #[cfg(feature = "migrations")]
@@ -46,8 +60,11 @@ impl SchemaSource {
     }
 
     /// Build the schema contribution.
-    pub fn build(&self) -> Schema {
-        (self.build)()
+    pub fn build(&self) -> Result<Schema, SchemaLoadError> {
+        match &self.source {
+            SchemaSourceKind::Builder(build) => build(),
+            SchemaSourceKind::Value(schema) => Ok(schema.clone()),
+        }
     }
 }
 
@@ -92,20 +109,36 @@ pub fn crate_migration(
 
 /// Register a root schema contribution.
 #[cfg(feature = "migrations")]
-pub fn root_schema(build: fn() -> Schema) -> SchemaSource {
+pub fn root_schema(build: SchemaSourceBuilder) -> SchemaSource {
     SchemaSource {
         namespace: None,
-        build,
+        source: SchemaSourceKind::Builder(build),
     }
 }
 
 /// Register a crate schema contribution under a virtual namespace.
 #[cfg(feature = "migrations")]
-pub fn crate_schema(namespace: &'static str, build: fn() -> Schema) -> SchemaSource {
+pub fn crate_schema(namespace: &'static str, build: SchemaSourceBuilder) -> SchemaSource {
     SchemaSource {
         namespace: Some(namespace),
-        build,
+        source: SchemaSourceKind::Builder(build),
     }
+}
+
+/// Register a prevalidated root schema contribution.
+#[cfg(feature = "migrations")]
+pub fn root_schema_value(schema: Schema) -> Result<SchemaSource, MigrationError> {
+    validated_schema_source(None, schema)
+}
+
+/// Register a prevalidated crate schema contribution under a virtual namespace.
+#[cfg(feature = "migrations")]
+pub fn crate_schema_value(
+    namespace: &'static str,
+    schema: Schema,
+) -> Result<SchemaSource, MigrationError> {
+    validate_namespace(Some(namespace))?;
+    validated_schema_source(Some(namespace), schema)
 }
 
 /// Errors raised while registering or executing migrations.
@@ -124,8 +157,14 @@ pub enum MigrationError {
     MissingNamespace(String),
     #[error("migration engine error: {0}")]
     Engine(#[from] gaman::EngineError),
+    #[error("schema source {namespace} failed: {source}")]
+    SchemaSource {
+        namespace: String,
+        #[source]
+        source: SchemaLoadError,
+    },
     #[error("schema merge error: {0}")]
-    Schema(String),
+    Schema(#[source] SchemaLoadError),
 }
 
 /// Registry for crate-owned migration sources discovered through bundles.
@@ -234,7 +273,7 @@ impl gaman::core::MigrationStore for MigrationRegistry {
     fn load_all<'a>(
         &'a self,
     ) -> gaman::core::BoxFuture<'a, Result<Vec<gaman::Migration>, gaman::core::StoreError>> {
-        Box::pin(async move { self.load_migrations() })
+        Box::pin(async move { self.load_migrations().await })
     }
 
     fn save<'a>(
@@ -242,10 +281,20 @@ impl gaman::core::MigrationStore for MigrationRegistry {
         migration: &'a gaman::Migration,
     ) -> gaman::core::BoxFuture<'a, Result<(), gaman::core::StoreError>> {
         Box::pin(async move {
-            Err(gaman::core::StoreError::Save {
+            let root = self.root.ok_or_else(|| gaman::core::StoreError::Save {
                 id: migration.id.clone(),
-                message: "Mool's application registry is read-only".to_string(),
-            })
+                message: "cannot save a generated migration without a root migration source"
+                    .to_string(),
+            })?;
+            if migration.id.contains('/') {
+                return Err(gaman::core::StoreError::Save {
+                    id: migration.id.clone(),
+                    message: "generated root migration ids cannot contain namespaces".to_string(),
+                });
+            }
+            DirectoryMigrationStore::new(root.dir())
+                .save(migration)
+                .await
         })
     }
 }
@@ -253,11 +302,13 @@ impl gaman::core::MigrationStore for MigrationRegistry {
 #[cfg(feature = "migrations")]
 impl MigrationRegistry {
     /// Loads and qualifies every registered migration using Gaman's store contract.
-    fn load_migrations(&self) -> Result<Vec<gaman::Migration>, gaman::core::StoreError> {
+    async fn load_migrations(&self) -> Result<Vec<gaman::Migration>, gaman::core::StoreError> {
         let mut migrations = Vec::new();
         let mut ids = HashSet::new();
         if let Some(root) = self.root {
             collect_embedded(root.embedded(), None, &mut migrations, &mut ids)?;
+            self.load_root_directory(root, &mut migrations, &mut ids)
+                .await?;
         }
         for (namespace, source) in &self.crates {
             collect_embedded(
@@ -267,7 +318,39 @@ impl MigrationRegistry {
                 &mut ids,
             )?;
         }
+        migrations.sort_by(|left, right| left.id.cmp(&right.id));
         Ok(migrations)
+    }
+
+    async fn load_root_directory(
+        &self,
+        root: MigrationSource,
+        migrations: &mut Vec<gaman::Migration>,
+        ids: &mut HashSet<String>,
+    ) -> Result<(), gaman::core::StoreError> {
+        let disk = DirectoryMigrationStore::new(root.dir()).load_all().await?;
+        for migration in disk {
+            if let Some(embedded) = migrations
+                .iter()
+                .find(|embedded| embedded.id == migration.id)
+            {
+                if same_migration(embedded, &migration)? {
+                    continue;
+                }
+                return Err(store_load_error(
+                    Some(&migration.id),
+                    "embedded migration content differs from its root source file",
+                ));
+            }
+            if !ids.insert(migration.id.clone()) {
+                return Err(store_load_error(
+                    Some(&migration.id),
+                    "duplicate root migration id",
+                ));
+            }
+            migrations.push(migration);
+        }
+        Ok(())
     }
 }
 
@@ -319,6 +402,20 @@ fn parse_embedded(
 }
 
 #[cfg(feature = "migrations")]
+fn same_migration(
+    left: &gaman::Migration,
+    right: &gaman::Migration,
+) -> Result<bool, gaman::core::StoreError> {
+    let left = left
+        .to_yaml_string()
+        .map_err(|error| store_load_error(Some(&left.id), error.to_string()))?;
+    let right = right
+        .to_yaml_string()
+        .map_err(|error| store_load_error(Some(&right.id), error.to_string()))?;
+    Ok(left == right)
+}
+
+#[cfg(feature = "migrations")]
 fn qualify(namespace: Option<&str>, id: &str) -> String {
     namespace
         .map(|namespace| format!("{namespace}/{id}"))
@@ -346,9 +443,14 @@ fn store_load_error(id: Option<&str>, message: impl Into<String>) -> gaman::core
 fn merge_schema(sources: Vec<SchemaSource>) -> Result<Schema, MigrationError> {
     let mut schema = Schema::default();
     for source in sources {
+        let namespace = source.namespace.unwrap_or("root").to_string();
         schema = schema
-            .merge(source.build())
-            .map_err(|e| MigrationError::Schema(e.to_string()))?;
+            .merge(
+                source
+                    .build()
+                    .map_err(|source| MigrationError::SchemaSource { namespace, source })?,
+            )
+            .map_err(MigrationError::Schema)?;
     }
     Ok(schema)
 }
@@ -362,9 +464,32 @@ impl MigrationRegistry {
                 .get(ns)
                 .map(|items| items.to_vec())
                 .unwrap_or_default(),
-            None => self.root_schema.clone(),
+            None => self
+                .root_schema
+                .iter()
+                .cloned()
+                .chain(self.crate_schema.values().flatten().cloned())
+                .collect(),
         }
     }
+}
+
+#[cfg(feature = "migrations")]
+fn validated_schema_source(
+    namespace: Option<&'static str>,
+    schema: Schema,
+) -> Result<SchemaSource, MigrationError> {
+    schema
+        .validate_checked()
+        .map_err(SchemaLoadError::Validation)
+        .map_err(|source| MigrationError::SchemaSource {
+            namespace: namespace.unwrap_or("root").to_string(),
+            source,
+        })?;
+    Ok(SchemaSource {
+        namespace,
+        source: SchemaSourceKind::Value(schema),
+    })
 }
 
 #[cfg(feature = "migrations")]

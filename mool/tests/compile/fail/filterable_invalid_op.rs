@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use mool as db;
 
 #[derive(Debug, Clone, db::Model)]

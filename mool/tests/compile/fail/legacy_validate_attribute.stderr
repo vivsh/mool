@@ -1,0 +1,11 @@
+error: cannot find attribute `validate` in this scope
+ --> tests/compile/fail/legacy_validate_attribute.rs:5:3
+  |
+5 | #[validate(rule = "ignored")]
+  |   ^^^^^^^^
+  |
+help: `validate` is an attribute that can be used by the derive macro `JsonSchema`, you might be missing a `derive` attribute
+  |
+6 + #[derive(JsonSchema)]
+7 | struct LegacyRow {
+  |

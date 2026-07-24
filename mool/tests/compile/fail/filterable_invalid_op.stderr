@@ -1,5 +1,5 @@
 error: Unknown literal value `contains` at op
-  --> tests/compile/fail/filterable_invalid_op.rs:15:5
+  --> tests/compile/fail/filterable_invalid_op.rs:13:5
    |
-15 |     #[filter(op = "contains", column = "title")]
+13 |     #[filter(op = "contains", column = "title")]
    |     ^

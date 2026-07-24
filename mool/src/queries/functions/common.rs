@@ -8,9 +8,9 @@ use super::super::extension::{
 };
 use crate::QueryError;
 
-/// Creates a typed CURRENT_TIMESTAMP expression.
+/// Returns the database statement timestamp as a Chrono UTC expression.
 pub fn now() -> Expr<chrono::DateTime<chrono::Utc>> {
-    custom(CurrentTimestamp)
+    crate::datetime::portable::now()
 }
 
 /// Creates a typed COALESCE(expr, fallback) expression.
@@ -182,11 +182,11 @@ impl WindowFn {
 }
 
 impl<T> DbFunction<T> for WindowFn {
-    fn name(&self) -> Result<Cow<'static, str>, QueryError> {
+    fn name(&self, _dialect: crate::SqlDialect) -> Result<Cow<'static, str>, QueryError> {
         Ok(Cow::Borrowed(self.name))
     }
 
-    fn validate(&self, arity: usize) -> Result<(), QueryError> {
+    fn validate(&self, _dialect: crate::SqlDialect, arity: usize) -> Result<(), QueryError> {
         if (self.min_arity..=self.max_arity).contains(&arity) {
             return Ok(());
         }
@@ -207,15 +207,6 @@ fn arity_label(min: usize, max: usize) -> String {
         return min.to_string();
     }
     format!("{min}-{max}")
-}
-
-#[derive(Clone)]
-struct CurrentTimestamp;
-
-impl DbExpression<chrono::DateTime<chrono::Utc>> for CurrentTimestamp {
-    fn render(&self, _ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError> {
-        Ok("CURRENT_TIMESTAMP".to_string())
-    }
 }
 
 /// Untyped start state for a SQL CASE expression.
@@ -293,19 +284,17 @@ where
         self.args.clone()
     }
 
-    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<String, QueryError> {
-        let mut sql = String::from("CASE");
+    fn render(&self, ctx: &mut ExprRenderCtx<'_>) -> Result<(), QueryError> {
+        ctx.push_sql("CASE");
         for arm in 0..self.arms {
-            let when = ctx.arg(arm * 2)?;
-            let then = ctx.arg(arm * 2 + 1)?;
-            sql.push_str(" WHEN ");
-            sql.push_str(when);
-            sql.push_str(" THEN ");
-            sql.push_str(then);
+            ctx.push_sql(" WHEN ");
+            ctx.push_arg(arm * 2)?;
+            ctx.push_sql(" THEN ");
+            ctx.push_arg(arm * 2 + 1)?;
         }
-        sql.push_str(" ELSE ");
-        sql.push_str(ctx.arg(self.arms * 2)?);
-        sql.push_str(" END");
-        Ok(sql)
+        ctx.push_sql(" ELSE ");
+        ctx.push_arg(self.arms * 2)?;
+        ctx.push_sql(" END");
+        Ok(())
     }
 }

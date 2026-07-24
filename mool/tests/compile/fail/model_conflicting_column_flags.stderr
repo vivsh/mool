@@ -1,0 +1,5 @@
+error: skip cannot be combined with primary-key or relation metadata
+ --> tests/compile/fail/model_conflicting_column_flags.rs:7:5
+  |
+7 |     id: i64,
+  |     ^^

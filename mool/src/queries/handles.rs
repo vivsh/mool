@@ -129,7 +129,7 @@ pub(super) struct ColumnData {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(super) enum ColumnOwner {
     Root(Table),
-    Source(Arc<str>),
+    Source(Source),
     Reference(Arc<str>),
 }
 
@@ -485,35 +485,35 @@ impl<T> Column<T> {
     }
 
     /// Adds this column to another typed expression.
-    pub fn add<R>(&self, rhs: R) -> Expr<T>
+    pub fn plus<R>(&self, rhs: R) -> Expr<T>
     where
         R: IntoExpr<T>,
     {
-        self.expr().add(rhs)
+        self.expr().plus(rhs)
     }
 
     /// Subtracts a typed expression from this column.
-    pub fn sub<R>(&self, rhs: R) -> Expr<T>
+    pub fn minus<R>(&self, rhs: R) -> Expr<T>
     where
         R: IntoExpr<T>,
     {
-        self.expr().sub(rhs)
+        self.expr().minus(rhs)
     }
 
     /// Multiplies this column by a typed expression.
-    pub fn mul<R>(&self, rhs: R) -> Expr<T>
+    pub fn times<R>(&self, rhs: R) -> Expr<T>
     where
         R: IntoExpr<T>,
     {
-        self.expr().mul(rhs)
+        self.expr().times(rhs)
     }
 
     /// Divides this column by a typed expression.
-    pub fn div<R>(&self, rhs: R) -> Expr<T>
+    pub fn divide_by<R>(&self, rhs: R) -> Expr<T>
     where
         R: IntoExpr<T>,
     {
-        self.expr().div(rhs)
+        self.expr().divide_by(rhs)
     }
 
     /// Computes the remainder after division by a typed expression.
