@@ -53,7 +53,7 @@ async fn count(pool: &mut db::DbPool) -> i64 {
 }
 
 /// Verifies batch insert, selective upsert, and model updates execute on the selected backend.
-#[db::sqlx::test]
+#[sqlx::test]
 #[ignore = "run through scripts/integration-tests.sh"]
 async fn selected_backend_executes_batch_write_lifecycle(pool: db::backend::Pool) {
     let mut pool = setup(pool).await;
@@ -101,7 +101,7 @@ async fn selected_backend_executes_batch_write_lifecycle(pool: db::backend::Pool
 }
 
 /// Verifies backend conflict-ignore behavior omits duplicate rows without aborting the insert.
-#[db::sqlx::test]
+#[sqlx::test]
 #[ignore = "run through scripts/integration-tests.sh"]
 async fn selected_backend_ignores_conflicting_batch_rows(pool: db::backend::Pool) {
     let mut pool = setup(pool).await;
@@ -132,7 +132,7 @@ async fn selected_backend_ignores_conflicting_batch_rows(pool: db::backend::Pool
 }
 
 /// Verifies separate statements can partially commit and an explicit transaction can roll back.
-#[db::sqlx::test]
+#[sqlx::test]
 #[ignore = "run through scripts/integration-tests.sh"]
 async fn selected_backend_batch_atomicity_is_explicit(pool: db::backend::Pool) {
     let mut pool = setup(pool).await;
@@ -212,7 +212,7 @@ struct UnnestInput {
 
 /// Verifies PostgreSQL UNNEST supports generated arrays, defaults, enums, conflicts, and upserts.
 #[cfg(feature = "postgres")]
-#[db::sqlx::test]
+#[sqlx::test]
 #[ignore = "run through scripts/integration-tests.sh"]
 async fn postgres_executes_generated_unnest_arrays(pool: db::backend::Pool) {
     let mut pool = db::DbPool::from_pool(pool);

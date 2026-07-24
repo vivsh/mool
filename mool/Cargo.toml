@@ -21,7 +21,6 @@ mariadb = ["sqlx/mysql", "gaman/mariadb", "gaman/fs"]
 sqlite = ["sqlx/sqlite", "gaman/sqlite", "gaman/fs"]
 migrations = ["gaman/fs", "gaman/db"]
 mock = []
-sqlx-test = ["sqlx/macros", "sqlx/migrate"]
 tracing = ["dep:tracing", "dep:twox-hash"]
 time = ["dep:time", "sqlx/time"]
 

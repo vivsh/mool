@@ -2,8 +2,9 @@
 
 #[cfg(mool_has_backend)]
 mod argvalue;
-#[cfg(mool_has_backend)]
 pub mod backend;
+#[cfg(not(mool_has_backend))]
+mod backendless;
 #[cfg(mool_has_backend)]
 mod commons;
 #[cfg(mool_has_backend)]
@@ -45,6 +46,8 @@ pub mod mock;
 
 #[cfg(mool_has_backend)]
 pub use argvalue::ArgValue;
+#[cfg(not(mool_has_backend))]
+pub use backendless::{DbConf, DbError, DbOperation, DbPool, IntegrityKind, QueryError};
 pub use enums::{SqlEnum, SqlEnumError, SqlEnumStorage};
 #[cfg(mool_has_backend)]
 pub use enums::{SqlSchemaBuilder, schema};

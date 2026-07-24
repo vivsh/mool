@@ -8,7 +8,7 @@ struct SmokeRow {
 }
 
 /// Verifies Mool can create, insert, and select through the selected SQLx transport.
-#[db::sqlx::test]
+#[sqlx::test]
 #[ignore = "run through scripts/integration-tests.sh"]
 async fn selected_backend_sqlx_smoke(pool: db::backend::Pool) {
     let mut pool = db::DbPool::from_pool(pool);

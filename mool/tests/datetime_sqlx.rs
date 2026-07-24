@@ -10,7 +10,7 @@ struct LiveMoment {
 }
 
 /// Verifies generated datetime SQL executes with stable values and SQLx decoding.
-#[db::sqlx::test]
+#[sqlx::test]
 #[ignore = "run through scripts/integration-tests.sh"]
 async fn selected_backend_datetime_conformance(pool: db::backend::Pool) -> Result<(), db::DbError> {
     initialize_external_session(&pool).await?;

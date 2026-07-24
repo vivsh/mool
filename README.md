@@ -43,9 +43,12 @@ mool = { version = "0.2", features = ["postgres"] }
 # or: "sqlite", "mysql", "mariadb"
 ```
 
-Mool also compiles without a backend for applications that only register schema
-and migration metadata, such as a memory-only framework mode. Query builders,
-pools, sessions, and selected-dialect schema helpers require one backend.
+Mool also compiles without a backend for memory-only framework modes. Migration
+registration and schema metadata remain available, along with compatibility
+`DbConf`, `DbError`, `DbPool`, and `backend::{Pool, Database, ...}` types. The
+backendless `DbPool` is inert: an empty default configuration is accepted, while
+a configured database URL returns a structured capability error. Query builders,
+sessions, SQLx access, and selected-dialect schema helpers require one backend.
 
 Common optional features:
 
@@ -55,18 +58,17 @@ mool = { version = "0.2", features = ["sqlite", "mock"] }
 mool = { version = "0.2", features = ["postgres", "time"] }
 ```
 
-For SQLx-managed live test databases, enable `sqlx-test` only in the consuming
-application's dev dependency:
+For SQLx-managed live test databases, declare SQLx directly in the consuming
+application's dev dependencies:
 
 ```toml
 [dev-dependencies]
-mool = { version = "0.2", features = ["postgres", "sqlx-test"] }
+mool = { version = "0.2", features = ["postgres"] }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "macros", "migrate"] }
 ```
 
-This makes `#[mool::sqlx::test]` available without adding SQLx test macro
-support to a release build. SQLx's attribute expansion requires the consuming
-crate to declare `sqlx` directly in `dev-dependencies`.
+Use `#[sqlx::test]` directly. SQLx's attribute expansion resolves the
+consuming crate, so Mool does not forward SQLx test macros.
 
 Automatic migrations are supported for PostgreSQL and SQLite. MySQL and MariaDB
 are available as query backends; their migration workflow is still maturing.

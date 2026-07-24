@@ -13,6 +13,8 @@ pub use crate::{
     PrefetchKey, QueryError, ReceivesPrefetch, Record, RecordSchema, SqlEnum, Statement, backref,
     from, many_to_many, meta, out, prefetch, query, val, var,
 };
+#[cfg(not(mool_has_backend))]
+pub use crate::{DbConf, DbError, DbPool};
 
 #[cfg(feature = "mysql")]
 pub use crate::backend::IgnoreErrorsExt;

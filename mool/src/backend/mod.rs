@@ -1,5 +1,10 @@
 //! Types and capabilities for the selected database backend.
 
+#[cfg(not(mool_has_backend))]
+pub use crate::backendless::{Arguments, Database, Pool, QueryResult, Row};
+#[cfg(mool_has_backend)]
+pub use crate::commons::{Arguments, Database, Pool, QueryResult, Row};
+
 #[cfg(any(feature = "postgres", feature = "mysql", feature = "mariadb"))]
 mod locking;
 #[cfg(feature = "mariadb")]
@@ -27,8 +32,6 @@ pub use postgres::*;
 pub use sqlite::*;
 #[cfg(feature = "postgres")]
 pub use unnest::{PgBatchColumns, PostgresUnnestExt};
-
-pub use crate::commons::{Arguments, Database, Pool, QueryResult, Row};
 
 #[cfg(any(feature = "postgres", feature = "sqlite"))]
 use crate::queries::InsertConflict;
@@ -167,11 +170,13 @@ impl<T> IgnoreErrorsExt for crate::queries::OwnedBatchInsert<T> {
 }
 
 /// Returns the maximum rows per batch for a fixed number of bound columns.
+#[cfg(mool_has_backend)]
 pub fn max_batch_rows(column_count: usize) -> Option<usize> {
     let rows = PARAMETER_LIMIT.checked_div(column_count)?;
     (rows > 0).then_some(rows)
 }
 
+#[cfg(mool_has_backend)]
 pub(crate) const fn gaman_dialect() -> gaman::core::Dialect {
     #[cfg(feature = "postgres")]
     return gaman::core::Dialect::Postgres;

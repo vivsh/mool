@@ -24,7 +24,7 @@ async fn count(pool: &mut db::DbPool) -> i64 {
 }
 
 /// Verifies an explicitly committed transaction persists its writes.
-#[db::sqlx::test]
+#[sqlx::test]
 #[ignore = "run through scripts/integration-tests.sh"]
 async fn selected_backend_transaction_commits(pool: db::backend::Pool) {
     let mut pool = setup(pool).await;
@@ -41,7 +41,7 @@ async fn selected_backend_transaction_commits(pool: db::backend::Pool) {
 }
 
 /// Verifies an explicitly rolled-back transaction discards its writes.
-#[db::sqlx::test]
+#[sqlx::test]
 #[ignore = "run through scripts/integration-tests.sh"]
 async fn selected_backend_transaction_rolls_back_error(pool: db::backend::Pool) {
     let mut pool = setup(pool).await;
@@ -57,7 +57,7 @@ async fn selected_backend_transaction_rolls_back_error(pool: db::backend::Pool) 
 }
 
 /// Verifies nested transactions use savepoints and preserve outer writes.
-#[db::sqlx::test]
+#[sqlx::test]
 #[ignore = "run through scripts/integration-tests.sh"]
 async fn selected_backend_nested_transaction_rolls_back(pool: db::backend::Pool) {
     let mut pool = setup(pool).await;
@@ -82,7 +82,7 @@ async fn selected_backend_nested_transaction_rolls_back(pool: db::backend::Pool)
 }
 
 /// Verifies dropping an unfinished transaction rolls back its writes.
-#[db::sqlx::test]
+#[sqlx::test]
 #[ignore = "run through scripts/integration-tests.sh"]
 async fn selected_backend_dropped_transaction_rolls_back(pool: db::backend::Pool) {
     let mut pool = setup(pool).await;
