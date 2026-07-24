@@ -916,7 +916,7 @@ dependencies = [
 
 [[package]]
 name = "mool-macros"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "mool-macros-impl",
  "proc-macro-crate",
@@ -927,7 +927,7 @@ dependencies = [
 
 [[package]]
 name = "mool-macros-impl"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "darling",
  "heck 0.4.1",
