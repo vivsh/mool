@@ -85,6 +85,8 @@ db::from(&Post::table()).all::<Post>().exec(test_db.pool_mut()).await?;
 test_db.teardown().await?;
 ```
 
+An empty registered migration history skips the migration runner entirely.
+
 `TestDatabase` attempts best-effort cleanup on drop, but
 `teardown().await` is the deterministic cleanup path and reports permission or
 server failures. Server test credentials must be able to create and drop

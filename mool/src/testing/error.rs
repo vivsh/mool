@@ -38,6 +38,14 @@ pub enum TestDatabaseError {
     #[cfg(all(feature = "migrations", any(feature = "postgres", feature = "sqlite")))]
     #[error("cannot apply test migrations without a root migration source")]
     MissingMigrationRoot,
+    /// The registered migration history could not be loaded before setup.
+    #[cfg(all(feature = "migrations", any(feature = "postgres", feature = "sqlite")))]
+    #[error("cannot load test migration history: {source}")]
+    MigrationInventory {
+        /// Structured error from the registered migration store.
+        #[source]
+        source: crate::migrations::engine::StoreError,
+    },
     /// Gaman could not apply the registered migration history.
     #[cfg(all(feature = "migrations", any(feature = "postgres", feature = "sqlite")))]
     #[error("cannot apply migrations to test database {target}: {source}")]

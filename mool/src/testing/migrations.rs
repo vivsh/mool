@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::migrations::engine::MigrationStore;
 use crate::migrations::{MigrationRegistry, engine};
 
 use super::{TestDatabaseError, target};
@@ -9,6 +10,13 @@ pub(crate) async fn apply(
     target: &target::TestTarget,
     registry: MigrationRegistry,
 ) -> Result<(), TestDatabaseError> {
+    let migrations = registry
+        .load_all()
+        .await
+        .map_err(|source| TestDatabaseError::MigrationInventory { source })?;
+    if migrations.is_empty() {
+        return Ok(());
+    }
     let root = registry
         .root()
         .ok_or(TestDatabaseError::MissingMigrationRoot)?;

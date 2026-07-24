@@ -99,6 +99,22 @@ async fn test_database_applies_registered_root_and_crate_migrations() {
     database.teardown().await.expect("tear down test database");
 }
 
+/// Verifies an empty migration registry skips migration execution and keeps a lazy pool unopened.
+#[cfg(all(feature = "migrations", any(feature = "postgres", feature = "sqlite")))]
+#[tokio::test]
+#[ignore = "run through scripts/integration-tests.sh"]
+async fn test_database_skips_an_empty_migration_registry() {
+    let registry = db::migrations::MigrationRegistry::new();
+    let database = db::testing::setup(test_conf())
+        .with_migrations(&registry)
+        .create()
+        .await
+        .expect("create test database without migration execution");
+
+    assert_eq!(database.pool().as_sqlx().size(), 0);
+    database.teardown().await.expect("tear down test database");
+}
+
 /// Builds a lazy source configuration without reusing an application database target.
 #[cfg(feature = "sqlite")]
 fn test_conf() -> db::DbConf {

@@ -6,7 +6,7 @@
 
 pub use gaman::core::{
     Answer, Clarification, ClarificationKind, ClarificationMessage, Decision, MigrationStore,
-    OptionAction, PromptEngine, Severity, TrackingStore,
+    OptionAction, PromptEngine, Severity, StoreError, TrackingStore,
 };
 pub use gaman::runner_factory::{
     DirectoryMigrationStore, EmbeddedMigrationStore, LazyExecutor, NativeMigrationStore,
