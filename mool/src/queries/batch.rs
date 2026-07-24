@@ -285,9 +285,7 @@ fn safe_rows(
     columns: usize,
     fixed_parameters: usize,
 ) -> Result<usize, QueryError> {
-    let available = crate::backend::PARAMETER_LIMIT
-        .checked_sub(fixed_parameters)
-        .unwrap_or_default();
+    let available = crate::backend::PARAMETER_LIMIT.saturating_sub(fixed_parameters);
     let safe = available / columns;
     if safe == 0 {
         return Err(batch_too_large_error(

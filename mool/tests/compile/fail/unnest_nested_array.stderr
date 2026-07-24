@@ -10,11 +10,6 @@ error[E0599]: the method `plan` exists for struct `PgUnnestBatchInsert<'_, Matri
    | |_________|
    |
    |
-  ::: $RUST/alloc/src/vec/mod.rs
-   |
-   |   pub struct Vec<T, #[unstable(feature = "allocator_api", issue = "32838")] A: Allocator = Global> {
-   |   ------------------------------------------------------------------------------------------------ doesn't satisfy `Vec<i64>: PgHasArrayType`
-   |
-   = note: the following trait bounds were not satisfied:
+    = note: the following trait bounds were not satisfied:
            `Vec<i64>: PgHasArrayType`
            which is required by `(Vec<i64>, Vec<Vec<i64>>): PgBatchColumns`

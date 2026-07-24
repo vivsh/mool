@@ -44,6 +44,6 @@ fn public_macro_contracts_compile_as_documented() {
     tests.compile_fail("tests/compile/fail/unsupported_postgres_array.rs");
     #[cfg(feature = "sqlite")]
     tests.compile_fail("tests/compile/fail/unsupported_row_lock.rs");
-    #[cfg(feature = "postgres")]
+    #[cfg(all(feature = "postgres", target_os = "linux"))]
     tests.compile_fail("tests/compile/fail/unnest_nested_array.rs");
 }

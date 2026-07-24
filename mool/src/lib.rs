@@ -57,6 +57,8 @@ pub use executor::*;
 pub use filters::{FilterBuilder, Filterable};
 #[cfg(mool_has_backend)]
 pub use interfaces::{BatchRecord, Model, ModelSchema, Record, RecordSchema};
+#[cfg(feature = "migrations")]
+pub use migrations::EmbeddedMigrations;
 pub use mool_macros::{Filterable, Model, Record, SqlEnum};
 #[cfg(mool_has_backend)]
 pub use page::Page;

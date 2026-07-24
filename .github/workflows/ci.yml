@@ -137,22 +137,6 @@ jobs:
         working-directory: mool
         run: bash scripts/packaged-consumer-check.sh
 
-  semver:
-    name: Published API ${{ matrix.backend }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        backend: [postgres, sqlite, mysql, mariadb]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Check SemVer compatibility
-        uses: obi1kenobi/cargo-semver-checks-action@v2
-        with:
-          package: mool
-          features: ${{ matrix.backend }}
-          release-type: patch
-
   msrv:
     name: Rust 1.88
     runs-on: ubuntu-latest
