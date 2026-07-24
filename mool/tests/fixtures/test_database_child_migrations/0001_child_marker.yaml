@@ -1,0 +1,5 @@
+id: 0001_child_marker
+operations:
+  - type: statement
+    up: CREATE TABLE mool_test_child_marker (id INTEGER PRIMARY KEY)
+    down: DROP TABLE mool_test_child_marker

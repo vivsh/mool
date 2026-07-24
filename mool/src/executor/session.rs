@@ -598,6 +598,11 @@ impl DbPool {
         Ok(Self { pool })
     }
 
+    /// Closes every connection held by this pool before external resource cleanup.
+    pub(crate) async fn close(&self) {
+        self.pool.close().await;
+    }
+
     /// Begins a transaction that rolls back on drop unless completed explicitly.
     pub async fn begin(&self) -> Result<DbTransaction<'_>, DbError> {
         let tx = self

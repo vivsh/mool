@@ -9,28 +9,28 @@ bash scripts/release-dependency-check.sh
 bash scripts/feature-contracts.sh
 cargo deny --all-features check advisories licenses bans sources
 cargo test --locked --workspace --no-default-features --features mool/sqlite
-cargo test --locked -p mool --no-default-features --features sqlite
-cargo test --locked -p mool --no-default-features --features postgres
-cargo test --locked -p mool --no-default-features --features mysql
-cargo test --locked -p mool --no-default-features --features mariadb
-cargo test --locked -p mool --no-default-features --features "sqlite time"
-cargo test --locked -p mool --no-default-features --features "postgres time"
-cargo test --locked -p mool --no-default-features --features "mysql time"
-cargo test --locked -p mool --no-default-features --features "mariadb time"
-cargo test --locked -p mool --no-default-features --features "sqlite migrations"
-cargo test --locked -p mool --no-default-features --features "postgres migrations"
+cargo test --locked -p mool --no-default-features --features "sqlite test-support"
+cargo test --locked -p mool --no-default-features --features "postgres test-support"
+cargo test --locked -p mool --no-default-features --features "mysql test-support"
+cargo test --locked -p mool --no-default-features --features "mariadb test-support"
+cargo test --locked -p mool --no-default-features --features "sqlite time test-support"
+cargo test --locked -p mool --no-default-features --features "postgres time test-support"
+cargo test --locked -p mool --no-default-features --features "mysql time test-support"
+cargo test --locked -p mool --no-default-features --features "mariadb time test-support"
+cargo test --locked -p mool --no-default-features --features "sqlite migrations test-support"
+cargo test --locked -p mool --no-default-features --features "postgres migrations test-support"
 cargo test --locked -p mool --no-default-features --features "postgres compile-contracts" --test trybuild
 cargo test --locked -p mool --no-default-features --features "postgres time compile-contracts" --test trybuild
 cargo test --locked -p mool --no-default-features --features "sqlite compile-contracts" --test trybuild
 cargo test --locked -p mool --no-default-features --features "mysql compile-contracts" --test trybuild
 cargo test --locked -p mool --no-default-features --features "postgres migrations compile-contracts" --test trybuild
 cargo test --locked -p mool --no-default-features --features "sqlite migrations compile-contracts" --test trybuild
-cargo check --locked -p mool --release --no-default-features --features sqlite
+cargo check --locked -p mool --release --no-default-features --features "sqlite test-support"
 cargo check --locked -p mool --release --no-default-features --features "sqlite mock"
 cargo check --locked -p mool --examples --no-default-features --features "postgres mock migrations time"
-cargo clippy --locked -p mool --all-targets --no-deps --no-default-features --features "sqlite time migrations mock" -- -D warnings
+cargo clippy --locked -p mool --all-targets --no-deps --no-default-features --features "sqlite time migrations mock test-support" -- -D warnings
 cargo clippy --locked -p mool-macros-impl -p mool-macros --all-targets -- -D warnings
-RUSTDOCFLAGS="-D warnings" cargo doc --locked -p mool --no-deps --no-default-features --features "sqlite migrations time"
+RUSTDOCFLAGS="-D warnings" cargo doc --locked -p mool --no-deps --no-default-features --features "sqlite migrations time test-support"
 bash scripts/packaged-consumer-check.sh
 
 tmp="$(mktemp -d)"

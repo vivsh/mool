@@ -56,6 +56,7 @@ Common optional features:
 mool = { version = "0.2", features = ["postgres", "migrations"] }
 mool = { version = "0.2", features = ["sqlite", "mock"] }
 mool = { version = "0.2", features = ["postgres", "time"] }
+mool = { version = "0.2", features = ["postgres", "test-support"] }
 ```
 
 For SQLx-managed live test databases, declare SQLx directly in the consuming
@@ -69,6 +70,25 @@ sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio",
 
 Use `#[sqlx::test]` directly. SQLx's attribute expansion resolves the
 consuming crate, so Mool does not forward SQLx test macros.
+
+For a plain Mool-owned isolated database, enable `test-support` instead. It
+creates a per-test target from `DbConf` without adding an attribute macro or a
+direct SQLx dependency:
+
+```rust
+let mut test_db = db::testing::setup(db::DbConf::from_env()?)
+    .with_migrations(&registry) // PostgreSQL and SQLite only
+    .create()
+    .await?;
+
+db::from(&Post::table()).all::<Post>().exec(test_db.pool_mut()).await?;
+test_db.teardown().await?;
+```
+
+`TestDatabase` attempts best-effort cleanup on drop, but
+`teardown().await` is the deterministic cleanup path and reports permission or
+server failures. Server test credentials must be able to create and drop
+databases.
 
 Automatic migrations are supported for PostgreSQL and SQLite. MySQL and MariaDB
 are query backends only; Mool does not execute migrations for either backend.
@@ -428,6 +448,8 @@ scripts/confidence-check.sh
 ```
 
 For live backend validation, use `scripts/integration-tests.sh <backend> all`.
+The live suite also verifies `db::testing::setup(...)` across every query
+backend and applies registry migrations on PostgreSQL and SQLite.
 
 ## What Mool Provides
 

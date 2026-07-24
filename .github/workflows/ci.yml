@@ -30,10 +30,10 @@ jobs:
           workspaces: mool
       - name: Test selected backend
         working-directory: mool
-        run: cargo test --locked -p mool --no-default-features --features "${{ matrix.backend }}${{ matrix.time }}"
+        run: cargo test --locked -p mool --no-default-features --features "${{ matrix.backend }}${{ matrix.time }} test-support"
       - name: Clippy selected backend
         working-directory: mool
-        run: cargo clippy --locked -p mool --all-targets --no-deps --no-default-features --features "${{ matrix.backend }}${{ matrix.time }}" -- -D warnings
+        run: cargo clippy --locked -p mool --all-targets --no-deps --no-default-features --features "${{ matrix.backend }}${{ matrix.time }} test-support" -- -D warnings
 
   migrations:
     name: Migrations ${{ matrix.backend }}
@@ -51,7 +51,7 @@ jobs:
           workspaces: mool
       - name: Test migration integration
         working-directory: mool
-        run: cargo test --locked -p mool --no-default-features --features "${{ matrix.backend }} migrations"
+        run: cargo test --locked -p mool --no-default-features --features "${{ matrix.backend }} migrations test-support"
 
   compile-contracts:
     name: Macro contracts ${{ matrix.name }}
@@ -118,14 +118,14 @@ jobs:
         working-directory: mool
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --locked -p mool --no-deps --no-default-features --features "sqlite migrations time"
+        run: cargo doc --locked -p mool --no-deps --no-default-features --features "sqlite migrations time test-support"
       - name: Optional tracing surface
         working-directory: mool
-        run: cargo check --locked -p mool --no-default-features --features "postgres tracing"
+        run: cargo check --locked -p mool --no-default-features --features "postgres tracing test-support"
       - name: Release feature gates
         working-directory: mool
         run: >-
-          cargo check --locked -p mool --release --no-default-features --features sqlite &&
+          cargo check --locked -p mool --release --no-default-features --features "sqlite test-support" &&
           cargo check --locked -p mool --release --no-default-features --features "sqlite mock"
       - name: Public examples
         working-directory: mool
@@ -178,7 +178,7 @@ jobs:
       - name: Check backendless migration registration
         run: cargo check --locked -p mool --no-default-features --features migrations
       - name: Test SQLite contracts
-        run: cargo test --locked -p mool --no-default-features --features sqlite
+        run: cargo test --locked -p mool --no-default-features --features "sqlite test-support"
 
   sqlite-live:
     name: Live SQLite

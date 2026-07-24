@@ -97,16 +97,21 @@ run_server_engine() {
 
 run_cargo_suite() {
   local engine="$1"
+  local features="${engine} time test-support"
+
+  if [[ "${engine}" == "sqlite" || "${engine}" == "postgres" ]]; then
+    features="${features} migrations"
+  fi
 
   if [[ "${selected_suite}" == "smoke" ]]; then
-    cargo test --locked -p mool --no-default-features --features "${engine}" \
-      --test sqlx_smoke -- --ignored
+    cargo test --locked -p mool --no-default-features --features "${features}" \
+      --test sqlx_smoke --test test_database -- --ignored
     return
   fi
 
-  cargo test --locked -p mool --no-default-features --features "${engine} time" \
+  cargo test --locked -p mool --no-default-features --features "${features}" \
     --test sqlx_smoke --test sqlx_transactions --test batch_writes_sqlx \
-    --test datetime_sqlx -- --ignored
+    --test datetime_sqlx --test test_database -- --ignored
 }
 
 main() {

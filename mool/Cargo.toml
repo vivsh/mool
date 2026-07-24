@@ -22,6 +22,7 @@ sqlite = ["sqlx/sqlite", "gaman/sqlite", "gaman/fs"]
 migrations = ["gaman/fs", "gaman/db"]
 compile-contracts = []
 mock = []
+test-support = ["dep:tempfile", "dep:tokio", "dep:uuid", "sqlx/migrate"]
 tracing = ["dep:tracing", "dep:twox-hash"]
 time = ["dep:time", "sqlx/time"]
 
@@ -34,15 +35,17 @@ schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
+tempfile = { version = "3", optional = true }
 thiserror.workspace = true
 time = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
 tracing = { version = "0.1", optional = true }
 twox-hash = { workspace = true, optional = true }
 url.workspace = true
+uuid = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = "1"
-tempfile = "3"
 trybuild = "1"
 sqlx = { workspace = true, features = ["macros", "migrate"] }
 tokio.workspace = true

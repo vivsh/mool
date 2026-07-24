@@ -33,6 +33,8 @@ pub mod relations;
 pub mod schema;
 #[cfg(mool_has_backend)]
 mod statement;
+#[cfg(all(mool_has_backend, feature = "test-support"))]
+pub mod testing;
 #[cfg(mool_has_backend)]
 pub mod types;
 
