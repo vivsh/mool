@@ -76,11 +76,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: mool
-      - uses: actions/checkout@v4
-        with:
-          repository: vivsh/gaman
-          ref: e508daba654482e65da1eefae084eeac739d4ce3
-          path: gaman
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.91"
@@ -89,7 +84,9 @@ jobs:
           workspaces: mool
       - name: Test compiler-pinned macro diagnostics
         working-directory: mool
-        run: bash scripts/test-with-local-gaman.sh "${{ matrix.features }}"
+        run: >-
+          cargo test --locked -p mool --no-default-features
+          --features "${{ matrix.features }}" --test trybuild
 
   quality:
     name: Formatting, docs, and feature guards
