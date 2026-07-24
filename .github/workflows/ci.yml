@@ -3,6 +3,8 @@ name: CI
 on:
   push:
   pull_request:
+  schedule:
+    - cron: "47 2 * * 1"
 
 permissions:
   contents: read
@@ -51,6 +53,41 @@ jobs:
         working-directory: mool
         run: cargo test --locked -p mool --no-default-features --features "${{ matrix.backend }} migrations"
 
+  compile-contracts:
+    name: Macro contracts ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: postgres
+            features: "postgres compile-contracts"
+          - name: postgres-time
+            features: "postgres time compile-contracts"
+          - name: sqlite
+            features: "sqlite compile-contracts"
+          - name: mysql
+            features: "mysql compile-contracts"
+          - name: postgres-migrations
+            features: "postgres migrations compile-contracts"
+          - name: sqlite-migrations
+            features: "sqlite migrations compile-contracts"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: mool
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.91"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: mool
+      - name: Test compiler-pinned macro diagnostics
+        working-directory: mool
+        run: >-
+          cargo test --locked -p mool --no-default-features
+          --features "${{ matrix.features }}" --test trybuild
+
   quality:
     name: Formatting, docs, and feature guards
     runs-on: ubuntu-latest
@@ -67,6 +104,9 @@ jobs:
       - name: Formatting
         working-directory: mool
         run: cargo fmt --all --check
+      - name: Registry dependency graph
+        working-directory: mool
+        run: bash scripts/release-dependency-check.sh
       - name: Backendless and test feature contracts
         working-directory: mool
         run: bash scripts/feature-contracts.sh
@@ -93,12 +133,25 @@ jobs:
       - name: Macro crate Clippy
         working-directory: mool
         run: cargo clippy --locked -p mool-macros-impl -p mool-macros --all-targets -- -D warnings
-      - name: Package publishable crates
+      - name: Package and external consumers
         working-directory: mool
-        run: >-
-          cargo package --locked -p mool-macros-impl &&
-          cargo package --locked -p mool-macros &&
-          cargo package --locked -p mool --features sqlite
+        run: bash scripts/packaged-consumer-check.sh
+
+  semver:
+    name: Published API ${{ matrix.backend }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [postgres, sqlite, mysql, mariadb]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check SemVer compatibility
+        uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          package: mool
+          features: ${{ matrix.backend }}
+          release-type: patch
 
   msrv:
     name: Rust 1.88
@@ -125,6 +178,23 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check advisories licenses bans sources
+
+  scheduled-cross-platform:
+    name: Scheduled ${{ matrix.os }} contracts
+    if: github.event_name == 'schedule'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check backendless migration registration
+        run: cargo check --locked -p mool --no-default-features --features migrations
+      - name: Test SQLite contracts
+        run: cargo test --locked -p mool --no-default-features --features sqlite
 
   sqlite-live:
     name: Live SQLite

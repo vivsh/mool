@@ -71,7 +71,8 @@ Use `#[sqlx::test]` directly. SQLx's attribute expansion resolves the
 consuming crate, so Mool does not forward SQLx test macros.
 
 Automatic migrations are supported for PostgreSQL and SQLite. MySQL and MariaDB
-are available as query backends; their migration workflow is still maturing.
+are query backends only; Mool does not execute migrations for either backend.
+Lateral joins are not currently supported.
 Do not use `--all-features`: backend features are exclusive.
 
 `mool::prelude::*` is the normal application import. It includes the common
@@ -419,7 +420,8 @@ assert!(plan.sql.contains("WHERE"));
 
 The project maintains offline SQL golden tests across supported dialects,
 macro compile-contract tests, SQLx compatibility checks, and database-free
-examples. Run the local confidence suite with:
+examples. The support and compatibility matrix is in
+[SUPPORT.md](SUPPORT.md). Run the local confidence suite with:
 
 ```sh
 scripts/confidence-check.sh

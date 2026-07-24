@@ -1,0 +1,31 @@
+name: Scheduled Fuzzing
+
+on:
+  schedule:
+    - cron: "23 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  raw-query:
+    name: Raw query placeholder fuzzing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      - name: Fuzz raw SQL planning
+        run: cargo fuzz run raw_query -- -max_total_time=120
+      - name: Preserve corpus and crash artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw-query-fuzz-artifacts
+          path: |
+            fuzz/corpus/raw_query
+            fuzz/artifacts/raw_query
+          if-no-files-found: ignore

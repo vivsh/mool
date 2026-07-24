@@ -47,6 +47,12 @@ proptest! {
         prop_assert_eq!(plan.total_bind_count, expected);
         prop_assert_eq!(planned_positions(&plan), expected_positions(expected));
     }
+
+    /// Verifies arbitrary raw SQL either plans or returns a structured error without panicking.
+    #[test]
+    fn raw_query_planning_is_total_for_utf8_sql(sql in any::<String>()) {
+        let _ = db::query(&sql).to_statement();
+    }
 }
 
 fn planned_positions(plan: &db::QueryPlan) -> BTreeSet<usize> {

@@ -1,4 +1,5 @@
 /// Verifies public macro contracts with compile-pass and compile-fail fixtures.
+#[cfg(feature = "compile-contracts")]
 #[test]
 fn public_macro_contracts_compile_as_documented() {
     let tests = trybuild::TestCases::new();

@@ -1,0 +1,19 @@
+[package]
+name = "mool-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+mool = { path = "../mool", default-features = false, features = ["sqlite"] }
+
+[[bin]]
+name = "raw_query"
+path = "fuzz_targets/raw_query.rs"
+test = false
+doc = false
+bench = false
