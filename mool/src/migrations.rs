@@ -387,8 +387,12 @@ fn parse_embedded(
         .ok_or_else(|| {
             store_load_error(None, format!("invalid migration filename '{filename}'"))
         })?;
-    let mut migration = gaman::Migration::from_yaml_str(content)
-        .map_err(|error| store_load_error(Some(filename), error.to_string()))?;
+    let mut migration = gaman::Migration::from_yaml_str(content).map_err(|error| {
+        store_load_error(
+            Some(filename),
+            format!("cannot parse embedded migration '{filename}': {error}"),
+        )
+    })?;
     migration.id = qualify(namespace, local_id);
     migration.dependencies = migration
         .dependencies
@@ -409,12 +413,18 @@ fn same_migration(
     left: &gaman::Migration,
     right: &gaman::Migration,
 ) -> Result<bool, gaman::core::StoreError> {
-    let left = left
-        .to_yaml_string()
-        .map_err(|error| store_load_error(Some(&left.id), error.to_string()))?;
-    let right = right
-        .to_yaml_string()
-        .map_err(|error| store_load_error(Some(&right.id), error.to_string()))?;
+    let left = left.to_yaml_string().map_err(|error| {
+        store_load_error(
+            Some(&left.id),
+            format!("cannot serialize embedded migration '{}': {error}", left.id),
+        )
+    })?;
+    let right = right.to_yaml_string().map_err(|error| {
+        store_load_error(
+            Some(&right.id),
+            format!("cannot serialize stored migration '{}': {error}", right.id),
+        )
+    })?;
     Ok(left == right)
 }
 

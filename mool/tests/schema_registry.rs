@@ -2,6 +2,7 @@
 
 pub mod common;
 
+use std::error::Error as StdError;
 use std::{path::Path, sync::Arc};
 
 use common::User;
@@ -89,6 +90,11 @@ fn migration_registry_preserves_schema_source_errors() {
             if namespace == "tasks"
     ));
     assert!(error.to_string().contains("task schema is unavailable"));
+    assert!(
+        error
+            .source()
+            .is_some_and(|source| source.to_string().contains("task schema is unavailable"))
+    );
 }
 
 /// Verifies prevalidated schema values can be registered without a callback.
@@ -262,6 +268,22 @@ async fn migration_registry_rejects_embedded_disk_content_conflicts() {
 
     let error = registry.load_all().await.unwrap_err();
     assert!(error.to_string().contains("content differs"));
+}
+
+/// Verifies malformed embedded migrations identify the source file and failed operation.
+#[tokio::test]
+async fn migration_registry_reports_embedded_yaml_context() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = dynamic_root(directory.path(), &[("0001_broken", "operations: [")]);
+    let mut registry = db::migrations::MigrationRegistry::new();
+    registry
+        .register(db::migrations::root_migration(root))
+        .unwrap();
+
+    let error = registry.load_all().await.unwrap_err();
+    let message = error.to_string();
+    assert!(message.contains("0001_broken"));
+    assert!(message.contains("cannot parse embedded migration"));
 }
 
 fn dynamic_root(

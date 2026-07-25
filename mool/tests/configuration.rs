@@ -1,3 +1,5 @@
+use std::error::Error as StdError;
+
 use mool as db;
 
 /// Verifies Mool consumes pool options while retaining SQLx transport options.
@@ -24,6 +26,16 @@ fn database_url_rejects_invalid_pool_options() {
 
     assert_eq!(invalid_max.code(), "configuration_error");
     assert_eq!(invalid_range.code(), "configuration_error");
+    assert!(
+        invalid_max
+            .to_string()
+            .contains("invalid database configuration")
+    );
+    assert!(invalid_max.source().is_some_and(|source| {
+        source
+            .to_string()
+            .contains("max must be an unsigned integer")
+    }));
 }
 
 /// Verifies the selected backend supplies a matching default URL scheme.

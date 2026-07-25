@@ -570,6 +570,17 @@ fn raw_sql_golden_queries_cover_named_placeholders_and_bind_errors() {
         .to_statement()
         .unwrap_err();
     assert!(unused.to_string().contains("unused binding: id"));
+
+    let duplicate = db::query("SELECT * FROM users WHERE id = :id")
+        .bind("id", 1_i64)
+        .bind("id", 2_i64)
+        .to_statement()
+        .unwrap_err();
+    assert!(
+        duplicate
+            .to_string()
+            .contains("duplicate raw binding for 'id'")
+    );
 }
 
 /// Verifies planning failures cover invalid identifiers, ownership mistakes, and invalid shapes.
