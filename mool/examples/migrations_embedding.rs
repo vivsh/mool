@@ -1,6 +1,6 @@
 #[cfg(feature = "migrations")]
 static MIGRATIONS: mool::migrations::EmbeddedMigrations =
-    mool::migrations::embedded_migrations!("tests/fixtures/migrations");
+    mool::migrations::embed_migrations!("tests/fixtures/migrations");
 
 #[cfg(feature = "migrations")]
 fn main() {

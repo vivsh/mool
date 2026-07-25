@@ -2,11 +2,17 @@ use proc_macro::TokenStream;
 use proc_macro_crate::{FoundCrate, crate_name};
 use quote::{format_ident, quote};
 
-mod embedded;
+/// Embeds YAML migration files from a directory relative to `CARGO_MANIFEST_DIR`.
+#[proc_macro]
+pub fn embed_migrations(input: TokenStream) -> TokenStream {
+    mool_macros_impl::embed_migrations::expand(input.into(), runtime_path()).into()
+}
 
+/// Deprecated alias for [`embed_migrations`].
+#[deprecated(since = "0.2.2", note = "use embed_migrations! instead")]
 #[proc_macro]
 pub fn embedded_migrations(input: TokenStream) -> TokenStream {
-    embedded::embedded_migrations(input, runtime_path())
+    mool_macros_impl::embed_migrations::expand(input.into(), runtime_path()).into()
 }
 
 #[proc_macro_derive(Record, attributes(column, table, db))]

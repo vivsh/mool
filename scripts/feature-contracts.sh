@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MOOL="$ROOT/mool"
 LOCKFILES=(
     "$MOOL/tests/fixtures/backendless-consumer/Cargo.lock"
+    "$MOOL/tests/fixtures/renamed-mool-consumer/Cargo.lock"
     "$MOOL/tests/fixtures/backendless-query-rejected/Cargo.lock"
     "$MOOL/tests/fixtures/testing-consumer/Cargo.lock"
     "$MOOL/tests/fixtures/testing-rejected/Cargo.lock"
@@ -23,6 +24,7 @@ cargo check -p mool --no-default-features --features migrations
 cargo check -p mool --no-default-features --features "sqlite test-support"
 cargo check -p mool --no-default-features --features "postgres migrations test-support"
 cargo check --offline --manifest-path "$MOOL/tests/fixtures/backendless-consumer/Cargo.toml"
+cargo check --offline --manifest-path "$MOOL/tests/fixtures/renamed-mool-consumer/Cargo.toml"
 cargo check --offline --manifest-path "$MOOL/tests/fixtures/testing-consumer/Cargo.toml"
 
 if cargo check --offline --manifest-path "$MOOL/tests/fixtures/backendless-query-rejected/Cargo.toml" >/dev/null 2>&1; then

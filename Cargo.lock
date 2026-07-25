@@ -893,7 +893,7 @@ dependencies = [
 
 [[package]]
 name = "mool"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "chrono",
  "gaman",
@@ -917,18 +917,17 @@ dependencies = [
 
 [[package]]
 name = "mool-macros"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "mool-macros-impl",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
- "syn 2.0.119",
 ]
 
 [[package]]
 name = "mool-macros-impl"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "darling",
  "heck 0.4.1",

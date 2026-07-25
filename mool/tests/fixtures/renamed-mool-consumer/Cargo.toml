@@ -1,0 +1,10 @@
+[package]
+name = "mool-renamed-consumer"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+db = { package = "mool", path = "../../../", default-features = false, features = ["migrations"] }

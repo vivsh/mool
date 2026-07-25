@@ -7,10 +7,10 @@ use mool::DbSession;
 
 #[cfg(feature = "migrations")]
 static ROOT_MIGRATIONS: db::migrations::EmbeddedMigrations =
-    db::migrations::embedded_migrations!("tests/fixtures/test_database_migrations");
+    db::migrations::embed_migrations!("tests/fixtures/test_database_migrations");
 #[cfg(feature = "migrations")]
 static CHILD_MIGRATIONS: db::migrations::EmbeddedMigrations =
-    db::migrations::embedded_migrations!("tests/fixtures/test_database_child_migrations");
+    db::migrations::embed_migrations!("tests/fixtures/test_database_child_migrations");
 
 /// Verifies setup creates an isolated lazy pool that executes SQL and tears down cleanly.
 #[tokio::test]

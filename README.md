@@ -390,7 +390,7 @@ registers migration history with the application:
 
 ```rust
 static MIGRATIONS: db::migrations::EmbeddedMigrations =
-    db::migrations::embedded_migrations!("migrations");
+    db::migrations::embed_migrations!("migrations");
 ```
 
 Register the resulting desired schema and embedded history with

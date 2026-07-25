@@ -23,6 +23,9 @@ pub use gaman::schema::{
 };
 pub use gaman::schema::{Schema, TableBuilder};
 #[cfg(feature = "migrations")]
+pub use mool_macros::embed_migrations;
+#[cfg(feature = "migrations")]
+#[deprecated(since = "0.2.2", note = "use embed_migrations! instead")]
 pub use mool_macros::embedded_migrations;
 
 /// A crate-level migration history registered through a bundle.
@@ -80,7 +83,7 @@ impl MigrationSource {
         self.migrations
     }
 
-    /// Return the source directory baked into `embedded_migrations!`.
+    /// Return the source directory baked into `embed_migrations!`.
     pub fn dir(&self) -> PathBuf {
         PathBuf::from(self.migrations.dir)
     }

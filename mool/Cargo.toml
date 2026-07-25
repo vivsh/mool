@@ -1,6 +1,6 @@
 [package]
 name = "mool"
-version = "0.2.1"
+version = "0.2.2"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -30,7 +30,7 @@ time = ["dep:time", "sqlx/time"]
 chrono.workspace = true
 gaman.workspace = true
 indexmap.workspace = true
-mool-macros = { path = "../mool-macros", version = "0.1.2" }
+mool-macros = { path = "../mool-macros", version = "0.1.4" }
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -46,6 +46,7 @@ uuid = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = "1"
+tempfile = "3"
 trybuild = "1"
 sqlx = { workspace = true, features = ["macros", "migrate"] }
 tokio.workspace = true

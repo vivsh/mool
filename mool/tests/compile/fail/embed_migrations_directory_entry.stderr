@@ -1,0 +1,5 @@
+error: migration entry '$DIR/tests/fixtures/invalid_migrations/0001_not_a_file.yaml' is not a file
+ --> tests/compile/fail/embed_migrations_directory_entry.rs:4:39
+  |
+4 |     db::migrations::embed_migrations!("../../../../mool/tests/fixtures/invalid_migrations");
+  |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

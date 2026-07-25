@@ -64,7 +64,7 @@ create_consumer \
     'use mool as db;
 
 static MIGRATIONS: db::migrations::EmbeddedMigrations =
-    db::migrations::embedded_migrations!("migrations");
+    db::migrations::embed_migrations!("migrations");
 
 fn main() {
     let _pool = db::DbPool::from_pool(db::backend::Pool);

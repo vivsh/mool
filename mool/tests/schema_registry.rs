@@ -18,9 +18,9 @@ struct BlogPost {
 }
 
 static ROOT_MIGRATIONS: db::migrations::EmbeddedMigrations =
-    db::migrations::embedded_migrations!("tests/fixtures/migrations");
+    db::migrations::embed_migrations!("tests/fixtures/migrations");
 static CRATE_MIGRATIONS: db::migrations::EmbeddedMigrations =
-    db::migrations::embedded_migrations!("tests/fixtures/migrations");
+    db::migrations::embed_migrations!("tests/fixtures/migrations");
 
 fn root_schema() -> Result<db::schema::Schema, db::schema::SchemaLoadError> {
     db::schema().model::<User>().build()

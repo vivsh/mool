@@ -1,7 +1,7 @@
 use mool as db;
 
 static MIGRATIONS: db::migrations::EmbeddedMigrations =
-    db::migrations::embedded_migrations!("migrations");
+    db::migrations::embed_migrations!("migrations");
 
 fn accepts_backendless_facade() {
     let _arguments = db::backend::Arguments::default();

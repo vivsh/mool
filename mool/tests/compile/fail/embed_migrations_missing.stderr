@@ -1,0 +1,5 @@
+error: cannot read migration directory '$WORKSPACE/target/tests/trybuild/mool/../../../../mool/tests/fixtures/missing_migrations': No such file or directory (os error 2)
+ --> tests/compile/fail/embed_migrations_missing.rs:4:39
+  |
+4 |     db::migrations::embed_migrations!("../../../../mool/tests/fixtures/missing_migrations");
+  |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

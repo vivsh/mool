@@ -3,6 +3,7 @@
 //! This crate is public only so proc-macro crates can reuse one implementation.
 //! Application code should depend on `mool`, not this crate.
 
+pub mod embed_migrations;
 pub mod filterable;
 pub mod model;
 pub mod record;

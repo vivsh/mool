@@ -1,52 +1,54 @@
+//! Function-like macro implementation for embedding migration YAML files.
+
 use std::path::{Path, PathBuf};
 
-use proc_macro::TokenStream;
-use proc_macro2::Span;
+use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{LitStr, parse_macro_input};
+use syn::LitStr;
 
-pub(crate) fn embedded_migrations(
-    input: TokenStream,
-    runtime_path: proc_macro2::TokenStream,
-) -> TokenStream {
-    let path_lit = parse_macro_input!(input as LitStr);
-    match expand_embedded_migrations(&path_lit, runtime_path) {
-        Ok(tokens) => tokens.into(),
-        Err(error) => error.into_compile_error().into(),
+/// Expands an `embed_migrations!` invocation for the resolved Mool runtime path.
+pub fn expand(input: TokenStream, runtime_path: TokenStream) -> TokenStream {
+    let path_lit = match syn::parse2::<LitStr>(input) {
+        Ok(path_lit) => path_lit,
+        Err(error) => return error.into_compile_error(),
+    };
+    match expand_path(&path_lit, runtime_path) {
+        Ok(tokens) => tokens,
+        Err(error) => error.into_compile_error(),
     }
 }
 
-fn expand_embedded_migrations(
-    path_lit: &LitStr,
-    runtime_path: proc_macro2::TokenStream,
-) -> syn::Result<proc_macro2::TokenStream> {
-    let rel_path = path_lit.value();
+/// Resolves, validates, and embeds one migration directory.
+fn expand_path(path_lit: &LitStr, runtime_path: TokenStream) -> syn::Result<TokenStream> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").map_err(|error| {
         syn::Error::new(
             path_lit.span(),
             format!("CARGO_MANIFEST_DIR is unavailable: {error}"),
         )
     })?;
-    let dir = Path::new(&manifest_dir).join(&rel_path);
-    let embedded_dir = std::fs::canonicalize(&dir).map_err(|error| {
+    let source_dir = Path::new(&manifest_dir).join(path_lit.value());
+    let embedded_dir = std::fs::canonicalize(&source_dir).map_err(|error| {
         syn::Error::new(
             path_lit.span(),
             format!(
                 "cannot read migration directory '{}': {error}",
-                dir.display()
+                source_dir.display()
             ),
         )
     })?;
     if !embedded_dir.is_dir() {
         return Err(syn::Error::new(
             path_lit.span(),
-            format!("migration path '{}' is not a directory", dir.display()),
+            format!(
+                "migration path '{}' is not a directory",
+                source_dir.display()
+            ),
         ));
     }
+
     let mut entries = migration_files(&embedded_dir, path_lit.span())?;
     entries.sort();
     let pairs = migration_pairs(&entries, path_lit.span())?;
-
     let dir_lit = LitStr::new(&embedded_dir.to_string_lossy(), Span::call_site());
 
     Ok(quote! {
@@ -58,6 +60,7 @@ fn expand_embedded_migrations(
     })
 }
 
+/// Collects regular YAML files in one migration directory.
 fn migration_files(dir: &Path, span: Span) -> syn::Result<Vec<PathBuf>> {
     let entries = std::fs::read_dir(dir).map_err(|error| {
         syn::Error::new(
@@ -77,14 +80,31 @@ fn migration_files(dir: &Path, span: Span) -> syn::Result<Vec<PathBuf>> {
             )
         })?;
         let path = entry.path();
-        if path.extension().and_then(|ext| ext.to_str()) == Some("yaml") {
-            files.push(path);
+        if path.extension().and_then(|extension| extension.to_str()) != Some("yaml") {
+            continue;
         }
+        let file_type = entry.file_type().map_err(|error| {
+            syn::Error::new(
+                span,
+                format!(
+                    "cannot inspect migration entry '{}': {error}",
+                    path.display()
+                ),
+            )
+        })?;
+        if !file_type.is_file() {
+            return Err(syn::Error::new(
+                span,
+                format!("migration entry '{}' is not a file", path.display()),
+            ));
+        }
+        files.push(path);
     }
     Ok(files)
 }
 
-fn migration_pairs(entries: &[PathBuf], span: Span) -> syn::Result<Vec<proc_macro2::TokenStream>> {
+/// Produces migration identifiers and `include_str!` expressions for sorted files.
+fn migration_pairs(entries: &[PathBuf], span: Span) -> syn::Result<Vec<TokenStream>> {
     entries
         .iter()
         .map(|path| {

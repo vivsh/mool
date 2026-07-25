@@ -10,7 +10,9 @@ fn public_macro_contracts_compile_as_documented() {
     tests.pass("tests/compile/pass/mock_available_debug.rs");
     tests.pass("tests/compile/pass/typed_contracts.rs");
     #[cfg(feature = "migrations")]
-    tests.pass("tests/compile/pass/embedded_migrations.rs");
+    tests.pass("tests/compile/pass/embed_migrations.rs");
+    #[cfg(feature = "migrations")]
+    tests.pass("tests/compile/pass/embedded_migrations_legacy.rs");
     #[cfg(feature = "migrations")]
     tests.pass("tests/compile/pass/migration_engine.rs");
     #[cfg(all(feature = "migrations", feature = "sqlite"))]
@@ -29,6 +31,10 @@ fn public_macro_contracts_compile_as_documented() {
     tests.compile_fail("tests/compile/fail/legacy_field_attribute.rs");
     tests.compile_fail("tests/compile/fail/legacy_schema_attribute.rs");
     tests.compile_fail("tests/compile/fail/legacy_validate_attribute.rs");
+    #[cfg(feature = "migrations")]
+    tests.compile_fail("tests/compile/fail/embed_migrations_missing.rs");
+    #[cfg(feature = "migrations")]
+    tests.compile_fail("tests/compile/fail/embed_migrations_directory_entry.rs");
     tests.compile_fail("tests/compile/fail/model_duplicate_column.rs");
     tests.compile_fail("tests/compile/fail/model_conflicting_column_flags.rs");
     tests.compile_fail("tests/compile/fail/model_malformed_reference.rs");
