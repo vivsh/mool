@@ -483,9 +483,9 @@ dependencies = [
 
 [[package]]
 name = "gaman"
-version = "0.3.25"
+version = "0.3.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe0bf1557ee078cd0af09da59d3efded752873aa639299fea0f23492e233223a"
+checksum = "6a7c9a5e070d00b9f5e18dc9aa803077227c67ad63302f47d9454c7a85511389"
 dependencies = [
  "gaman-core",
  "serde",
@@ -498,9 +498,9 @@ dependencies = [
 
 [[package]]
 name = "gaman-core"
-version = "0.3.25"
+version = "0.3.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7167af41f365d32e5305456cc604d15ee40c8862b70b46260a546bb189102ce4"
+checksum = "dd8ddf0481d37efd0f5268f8d27e1f6191467a4cdb94ed6b1f6389d7bda1fe01"
 dependencies = [
  "serde",
  "serde_json",
