@@ -1,0 +1,17 @@
+error[E0277]: the trait bound `Vec<std::string::String>: Type<mool::sqlx::Sqlite>` is not satisfied
+ --> tests/compile/fail/model_native_array_sqlite.rs:2:62
+  |
+2 |     let _ = mool::schema::__private::native_array_sql_type::<String>();
+  |                                                              ^^^^^^ the trait `Type<mool::sqlx::Sqlite>` is not implemented for `Vec<std::string::String>`
+  |
+  = help: the trait `Type<mool::sqlx::Sqlite>` is not implemented for `Vec<std::string::String>`
+          but it is implemented for `Vec<u8>`
+  = help: for that trait implementation, expected `u8`, found `std::string::String`
+note: required by a bound in `native_array_sql_type`
+ --> src/schema/__private.rs
+  |
+  | pub fn native_array_sql_type<T>() -> String
+  |        --------------------- required by a bound in this function
+  | where
+  |     Vec<T>: Type<Database>,
+  |             ^^^^^^^^^^^^^^ required by this bound in `native_array_sql_type`

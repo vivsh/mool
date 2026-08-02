@@ -27,6 +27,8 @@ Changelog structure and Rust semantic-versioning conventions.
 - Replace `Statement::from_str` with the explicit `Statement::raw` constructor.
 - Remove callback-based `insert_using`, `update_using`, and `DbPool::transaction`
   APIs. Record-backed `.set(...)` overrides and explicit transactions remain.
+- Replace macro token-name matching for temporal and PostgreSQL array columns
+  with trait-based Chrono, `time`, UUID, JSON, and SQLx array inference.
 
 ### Added
 
@@ -45,6 +47,8 @@ Changelog structure and Rust semantic-versioning conventions.
 - Typed portable datetime extraction, truncation, UTC current values, fixed
   duration arithmetic, backend-specific temporal functions, and optional
   `time` crate integration without replacement temporal value types.
+- Alias-safe UUID and JSON model schema inference, including typed
+  `sqlx::types::Json<T>` values and SQLx-compatible PostgreSQL arrays.
 
 ### Compatibility Notes
 

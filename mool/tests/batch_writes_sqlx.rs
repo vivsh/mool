@@ -184,11 +184,8 @@ enum UnnestStatus {
 struct UnnestRow {
     #[column(primary_key)]
     id: i64,
-    #[column(type = "uuid")]
     external_id: Uuid,
-    #[column(type = "timestamptz")]
     created_at: chrono::DateTime<chrono::Utc>,
-    #[column(type = "jsonb")]
     metadata: serde_json::Value,
     subtitle: Option<String>,
     #[column(sql_enum)]
@@ -199,11 +196,8 @@ struct UnnestRow {
 #[derive(Debug, Clone, db::Record)]
 #[table(name = "mool_unnest_rows")]
 struct UnnestInput {
-    #[column(type = "uuid")]
     external_id: Uuid,
-    #[column(type = "timestamptz")]
     created_at: chrono::DateTime<chrono::Utc>,
-    #[column(type = "jsonb")]
     metadata: serde_json::Value,
     subtitle: Option<String>,
     #[column(sql_enum)]

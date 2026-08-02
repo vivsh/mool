@@ -18,10 +18,10 @@ macro_rules! __mool_impl_sql_enum_pg_array {
             }
         }
     };
-    ($enum:ty, native, $array_name:literal) => {
+    ($enum:ty, native, $element_name:literal) => {
         impl $crate::sqlx::postgres::PgHasArrayType for $enum {
             fn array_type_info() -> $crate::sqlx::postgres::PgTypeInfo {
-                $crate::sqlx::postgres::PgTypeInfo::with_name($array_name)
+                $crate::sqlx::postgres::PgTypeInfo::array_of($element_name)
             }
         }
     };

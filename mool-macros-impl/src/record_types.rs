@@ -115,6 +115,9 @@ pub(super) fn array_inner_type(ty: &Type) -> Option<&Type> {
     let Some(GenericArgument::Type(inner)) = args.args.first() else {
         return None;
     };
+    if is_u8_type(inner) {
+        return None;
+    }
     Some(inner)
 }
 

@@ -5,6 +5,83 @@ use common::{Account, AuditLog, Membership, PostWithAuthor, col};
 use common::{Post, User};
 use mool as db;
 
+type CreatedAt = chrono::DateTime<chrono::Utc>;
+type MaybeCreatedAt = Option<CreatedAt>;
+type Identifier = sqlx::types::Uuid;
+type Metadata = sqlx::types::Json<serde_json::Value>;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct AppMetadata {
+    source: String,
+}
+
+#[derive(Debug, Clone, db::Model)]
+#[table(name = "inferred_type_rows")]
+struct InferredTypeRow {
+    #[column(primary_key)]
+    id: Identifier,
+    optional_id: Option<Identifier>,
+    created_at: CreatedAt,
+    processed_at: MaybeCreatedAt,
+    metadata: serde_json::Value,
+    typed_metadata: Metadata,
+    app_metadata: sqlx::types::Json<AppMetadata>,
+    optional_metadata: Option<Metadata>,
+    bytes: Vec<u8>,
+    #[column(type = "timestamp with time zone")]
+    explicit_timestamp: CreatedAt,
+    #[column(type = "json")]
+    ordered_document: serde_json::Value,
+}
+
+#[cfg(feature = "time")]
+type EventTime = time::OffsetDateTime;
+
+#[cfg(feature = "time")]
+#[derive(Debug, Clone, db::Model)]
+#[table(name = "inferred_time_rows")]
+struct InferredTimeRow {
+    #[column(primary_key)]
+    id: i64,
+    occurred_at: EventTime,
+    optional_at: Option<EventTime>,
+    local_at: time::PrimitiveDateTime,
+    event_date: time::Date,
+}
+
+#[cfg(feature = "postgres")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, db::SqlEnum)]
+#[sql_enum(
+    name = "array_status",
+    storage = "native_postgres",
+    rename_all = "snake_case"
+)]
+enum ArrayStatus {
+    Ready,
+    Complete,
+}
+
+#[cfg(feature = "postgres")]
+#[derive(Debug, Clone, sqlx::Type)]
+#[sqlx(transparent)]
+struct CustomKey(i64);
+
+#[cfg(feature = "postgres")]
+#[derive(Debug, Clone, db::Model)]
+#[table(name = "inferred_array_rows")]
+struct InferredArrayRow {
+    #[column(primary_key)]
+    id: i64,
+    identifiers: Vec<Identifier>,
+    timestamps: Vec<CreatedAt>,
+    documents: Vec<serde_json::Value>,
+    typed_documents: Vec<Metadata>,
+    custom_keys: Vec<CustomKey>,
+    statuses: Vec<ArrayStatus>,
+    #[cfg(feature = "time")]
+    time_timestamps: Vec<EventTime>,
+}
+
 fn active_dialect() -> db::gaman::core::Dialect {
     #[cfg(feature = "postgres")]
     return db::gaman::core::Dialect::Postgres;
@@ -163,4 +240,72 @@ fn model_derive_preserves_indexes_uniques_and_checks() {
         col(&table, "price_cents").check.as_deref(),
         Some("price_cents >= 0")
     );
+}
+
+/// Verifies common SQLx value families infer stable dialect-specific schema types.
+#[test]
+fn model_derive_infers_temporal_uuid_and_json_aliases() {
+    let table = <InferredTypeRow as db::schema::IntoTable>::into_table(&active_dialect());
+
+    let expected = match active_dialect() {
+        db::gaman::core::Dialect::Postgres => ("uuid", "timestamptz", "jsonb", "bytea"),
+        db::gaman::core::Dialect::Sqlite => ("blob", "text", "text", "blob"),
+        db::gaman::core::Dialect::Mysql | db::gaman::core::Dialect::Mariadb => {
+            ("binary(16)", "timestamp(6)", "json", "blob")
+        }
+    };
+
+    assert_eq!(col(&table, "id").col_type, expected.0);
+    assert_eq!(col(&table, "optional_id").col_type, expected.0);
+    assert!(col(&table, "optional_id").nullable);
+    assert_eq!(col(&table, "created_at").col_type, expected.1);
+    assert_eq!(col(&table, "processed_at").col_type, expected.1);
+    assert!(col(&table, "processed_at").nullable);
+    assert_eq!(col(&table, "metadata").col_type, expected.2);
+    assert_eq!(col(&table, "typed_metadata").col_type, expected.2);
+    assert_eq!(col(&table, "app_metadata").col_type, expected.2);
+    assert_eq!(col(&table, "optional_metadata").col_type, expected.2);
+    assert!(col(&table, "optional_metadata").nullable);
+    assert_eq!(col(&table, "bytes").col_type, expected.3);
+    assert_eq!(
+        col(&table, "explicit_timestamp").col_type,
+        "timestamp with time zone"
+    );
+    assert_eq!(col(&table, "ordered_document").col_type, "json");
+}
+
+/// Verifies aliased `time` values infer their date and timestamp families.
+#[cfg(feature = "time")]
+#[test]
+fn model_derive_infers_time_aliases() {
+    let table = <InferredTimeRow as db::schema::IntoTable>::into_table(&active_dialect());
+    let expected = match active_dialect() {
+        db::gaman::core::Dialect::Postgres => ("timestamptz", "timestamp", "date"),
+        db::gaman::core::Dialect::Sqlite => ("text", "text", "text"),
+        db::gaman::core::Dialect::Mysql | db::gaman::core::Dialect::Mariadb => {
+            ("timestamp(6)", "datetime(6)", "date")
+        }
+    };
+
+    assert_eq!(col(&table, "occurred_at").col_type, expected.0);
+    assert_eq!(col(&table, "optional_at").col_type, expected.0);
+    assert!(col(&table, "optional_at").nullable);
+    assert_eq!(col(&table, "local_at").col_type, expected.1);
+    assert_eq!(col(&table, "event_date").col_type, expected.2);
+}
+
+/// Verifies PostgreSQL arrays derive their SQL names from SQLx element metadata.
+#[cfg(feature = "postgres")]
+#[test]
+fn model_derive_infers_postgres_array_types() {
+    let table = <InferredArrayRow as db::schema::IntoTable>::into_table(&active_dialect());
+
+    assert_eq!(col(&table, "identifiers").col_type, "uuid[]");
+    assert_eq!(col(&table, "timestamps").col_type, "timestamptz[]");
+    assert_eq!(col(&table, "documents").col_type, "jsonb[]");
+    assert_eq!(col(&table, "typed_documents").col_type, "jsonb[]");
+    assert_eq!(col(&table, "custom_keys").col_type, "bigint[]");
+    assert_eq!(col(&table, "statuses").col_type, "array_status[]");
+    #[cfg(feature = "time")]
+    assert_eq!(col(&table, "time_timestamps").col_type, "timestamptz[]");
 }

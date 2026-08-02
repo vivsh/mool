@@ -483,9 +483,9 @@ dependencies = [
 
 [[package]]
 name = "gaman"
-version = "0.3.26"
+version = "0.3.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a7c9a5e070d00b9f5e18dc9aa803077227c67ad63302f47d9454c7a85511389"
+checksum = "111c7509986d0bec7f7823eb6b11d9a63084e4528c00d06b6a0836eafbcbfcca"
 dependencies = [
  "gaman-core",
  "serde",
@@ -498,16 +498,20 @@ dependencies = [
 
 [[package]]
 name = "gaman-core"
-version = "0.3.26"
+version = "0.3.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd8ddf0481d37efd0f5268f8d27e1f6191467a4cdb94ed6b1f6389d7bda1fe01"
+checksum = "18b4410b0357e6d3b41aa65dc659ef75ee067eb89662fb469566e025164059be"
 dependencies = [
+ "chrono",
  "serde",
  "serde_json",
  "serde_yaml",
  "sha2",
  "sqlparser",
+ "sqlx",
  "thiserror",
+ "time",
+ "uuid",
 ]
 
 [[package]]
@@ -893,7 +897,7 @@ dependencies = [
 
 [[package]]
 name = "mool"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "chrono",
  "gaman",
@@ -917,7 +921,7 @@ dependencies = [
 
 [[package]]
 name = "mool-macros"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "mool-macros-impl",
  "proc-macro-crate",
@@ -927,7 +931,7 @@ dependencies = [
 
 [[package]]
 name = "mool-macros-impl"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "darling",
  "heck 0.4.1",
@@ -1981,7 +1985,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",

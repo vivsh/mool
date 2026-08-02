@@ -49,6 +49,12 @@ fn public_macro_contracts_compile_as_documented() {
     #[cfg(not(feature = "postgres"))]
     tests.compile_fail("tests/compile/fail/unsupported_postgres_array.rs");
     #[cfg(feature = "sqlite")]
+    tests.compile_fail("tests/compile/fail/model_native_array_sqlite.rs");
+    #[cfg(any(feature = "mysql", feature = "mariadb"))]
+    tests.compile_fail("tests/compile/fail/model_native_array_mysql.rs");
+    #[cfg(feature = "postgres")]
+    tests.compile_fail("tests/compile/fail/model_array_missing_pg_metadata.rs");
+    #[cfg(feature = "sqlite")]
     tests.compile_fail("tests/compile/fail/unsupported_row_lock.rs");
     #[cfg(all(feature = "postgres", target_os = "linux"))]
     tests.compile_fail("tests/compile/fail/unnest_nested_array.rs");

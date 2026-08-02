@@ -1,6 +1,6 @@
 [package]
 name = "mool"
-version = "0.2.2"
+version = "0.2.3"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -24,13 +24,13 @@ compile-contracts = []
 mock = []
 test-support = ["dep:tempfile", "dep:tokio", "dep:uuid", "sqlx/migrate"]
 tracing = ["dep:tracing", "dep:twox-hash"]
-time = ["dep:time", "sqlx/time"]
+time = ["dep:time", "gaman/time-types", "sqlx/time"]
 
 [dependencies]
 chrono.workspace = true
 gaman.workspace = true
 indexmap.workspace = true
-mool-macros = { path = "../mool-macros", version = "0.1.4" }
+mool-macros = { path = "../mool-macros", version = "0.1.5" }
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true

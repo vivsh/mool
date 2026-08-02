@@ -201,14 +201,10 @@ fn gen_column(
 ) -> Option<proc_macro2::TokenStream> {
     let name = column_name(field);
     let ty = &field.ty;
-    let inferred_array_type = array_sql_type(ty);
-    let inferred_temporal_type = temporal_sql_type(ty);
+    let inferred_array_element = array_inner_type(ty);
     let nullable_tokens = gen_nullable(
         field,
-        field.column.serial
-            || field.column.sql_type.is_some()
-            || inferred_array_type.is_some()
-            || inferred_temporal_type.is_some(),
+        field.column.serial || field.column.sql_type.is_some() || inferred_array_element.is_some(),
     );
     let pk = field
         .column
@@ -262,24 +258,9 @@ fn gen_column(
             });
         });
     }
-    if let Some(sql_type) = inferred_array_type {
+    if let Some(element_type) = inferred_array_element {
         return Some(quote! {
-            table = table.column(#name, #sql_type, |c| {
-                #body
-            });
-        });
-    }
-    if let Some(temporal_type) = inferred_temporal_type {
-        let postgres = temporal_type.postgres();
-        let sqlite = temporal_type.sqlite();
-        let mysql = temporal_type.mysql();
-        return Some(quote! {
-            let sql_type = match *dialect {
-                #crate_path::gaman::core::Dialect::Postgres => #postgres,
-                #crate_path::gaman::core::Dialect::Sqlite => #sqlite,
-                #crate_path::gaman::core::Dialect::Mysql => #mysql,
-                #crate_path::gaman::core::Dialect::Mariadb => #mysql,
-            };
+            let sql_type = #crate_path::schema::__private::native_array_sql_type::<#element_type>();
             table = table.column(#name, sql_type, |c| {
                 #body
             });
@@ -426,98 +407,6 @@ fn column_name(field: &FieldMeta) -> String {
 
 fn is_option_type(ty: &syn::Type) -> bool {
     option_inner_type(ty).is_some()
-}
-
-fn array_sql_type(ty: &Type) -> Option<&'static str> {
-    let inner = array_inner_type(ty)?;
-    let Type::Path(path) = inner else {
-        return None;
-    };
-    if path.qself.is_some() {
-        return None;
-    }
-    let normalized = path
-        .path
-        .segments
-        .iter()
-        .map(|segment| segment.ident.to_string())
-        .collect::<Vec<_>>()
-        .join("::");
-    match normalized.as_str() {
-        "String" | "std::string::String" | "alloc::string::String" => Some("text[]"),
-        "bool" => Some("boolean[]"),
-        "i16" => Some("smallint[]"),
-        "i32" => Some("integer[]"),
-        "i64" => Some("bigint[]"),
-        "f32" => Some("real[]"),
-        "f64" => Some("double precision[]"),
-        "uuid::Uuid" => Some("uuid[]"),
-        "chrono::NaiveDate" => Some("date[]"),
-        "chrono::NaiveDateTime" => Some("timestamp[]"),
-        "chrono::DateTime" => Some("timestamptz[]"),
-        "time::Date" => Some("date[]"),
-        "time::PrimitiveDateTime" => Some("timestamp[]"),
-        "time::OffsetDateTime" => Some("timestamptz[]"),
-        _ => None,
-    }
-}
-
-#[derive(Clone, Copy)]
-enum TemporalSqlType {
-    Date,
-    NaiveTimestamp,
-    UtcTimestamp,
-}
-
-impl TemporalSqlType {
-    fn postgres(self) -> &'static str {
-        match self {
-            Self::Date => "date",
-            Self::NaiveTimestamp => "timestamp",
-            Self::UtcTimestamp => "timestamptz",
-        }
-    }
-
-    fn sqlite(self) -> &'static str {
-        "text"
-    }
-
-    fn mysql(self) -> &'static str {
-        match self {
-            Self::Date => "date",
-            Self::NaiveTimestamp => "datetime(6)",
-            Self::UtcTimestamp => "timestamp(6)",
-        }
-    }
-}
-
-/// Maps canonical Chrono and `time` paths to backend-aware schema families.
-///
-/// Imported aliases and custom wrappers intentionally return `None`, requiring
-/// callers to provide an explicit column type rather than guessing.
-fn temporal_sql_type(ty: &Type) -> Option<TemporalSqlType> {
-    let ty = option_inner_type(ty).unwrap_or(ty);
-    let Type::Path(path) = ty else {
-        return None;
-    };
-    if path.qself.is_some() {
-        return None;
-    }
-    let normalized = path
-        .path
-        .segments
-        .iter()
-        .map(|segment| segment.ident.to_string())
-        .collect::<Vec<_>>()
-        .join("::");
-    match normalized.as_str() {
-        "chrono::NaiveDate" | "time::Date" => Some(TemporalSqlType::Date),
-        "chrono::NaiveDateTime" | "time::PrimitiveDateTime" => {
-            Some(TemporalSqlType::NaiveTimestamp)
-        }
-        "chrono::DateTime" | "time::OffsetDateTime" => Some(TemporalSqlType::UtcTimestamp),
-        _ => None,
-    }
 }
 
 fn array_inner_type(ty: &Type) -> Option<&Type> {

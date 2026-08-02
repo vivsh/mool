@@ -14,3 +14,7 @@ pub use gaman::schema::{
 
 #[cfg(mool_has_backend)]
 pub use crate::enums::{SchemaBuilder, schema};
+
+#[cfg(mool_has_backend)]
+#[doc(hidden)]
+pub mod __private;

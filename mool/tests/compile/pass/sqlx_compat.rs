@@ -37,19 +37,34 @@ struct JsonMeta {
     label: String,
 }
 
+type ExternalId = sqlx::types::Uuid;
+type CreatedAt = chrono::DateTime<chrono::Utc>;
+type TypedMeta = sqlx::types::Json<JsonMeta>;
+
+#[cfg(feature = "postgres")]
+#[derive(Debug, Clone, sqlx::Type)]
+#[sqlx(transparent)]
+struct CustomId(i64);
+
 #[derive(Debug, Clone, db::Model)]
 #[table(name = "compat_rows")]
 struct CompatRow {
     #[column(primary_key)]
     id: i64,
-    #[column(type = "uuid")]
-    external_id: sqlx::types::Uuid,
-    #[column(type = "timestamptz")]
-    created_at: chrono::DateTime<chrono::Utc>,
+    external_id: ExternalId,
+    optional_id: Option<ExternalId>,
+    created_at: CreatedAt,
     #[column(nullable)]
     subtitle: Option<String>,
     #[column(type = "jsonb")]
     meta: JsonMeta,
+    typed_meta: TypedMeta,
+    json_value: serde_json::Value,
+    bytes: Vec<u8>,
+    #[cfg(feature = "postgres")]
+    related_ids: Vec<ExternalId>,
+    #[cfg(feature = "postgres")]
+    custom_ids: Vec<CustomId>,
     #[column(sql_enum)]
     text_status: TextStatus,
     #[column(sql_enum)]
@@ -85,6 +100,10 @@ fn main() {
     assert_sqlx_value::<IntStatus>();
     assert_sqlx_value::<NativePostgresStatus>();
     assert_sqlx_value::<NativeMysqlStatus>();
+    assert_sqlx_value::<ExternalId>();
+    assert_sqlx_value::<CreatedAt>();
+    assert_sqlx_value::<TypedMeta>();
+    assert_sqlx_value::<serde_json::Value>();
 
     #[cfg(feature = "time")]
     {
@@ -107,6 +126,11 @@ fn main() {
         assert_postgres_array::<IntStatus>();
         assert_postgres_array::<NativePostgresStatus>();
         assert_postgres_array::<NativeMysqlStatus>();
+        assert_postgres_array::<ExternalId>();
+        assert_postgres_array::<CreatedAt>();
+        assert_postgres_array::<serde_json::Value>();
+        assert_postgres_array::<TypedMeta>();
+        assert_postgres_array::<CustomId>();
         #[cfg(feature = "time")]
         {
             assert_postgres_array::<time::OffsetDateTime>();

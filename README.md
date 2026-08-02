@@ -182,6 +182,24 @@ let plan = db::from(&Post::table()).all::<Post>().plan()?;
 println!("{}", plan.sql);
 ```
 
+Model schema inference uses Rust traits, so imported names and type aliases work
+without macro-specific path spelling:
+
+| Rust field | PostgreSQL | SQLite | MySQL/MariaDB |
+| --- | --- | --- | --- |
+| `DateTime<Utc>` / `OffsetDateTime` | `timestamptz` | `text` | `timestamp(6)` |
+| `NaiveDateTime` / `PrimitiveDateTime` | `timestamp` | `text` | `datetime(6)` |
+| Chrono or `time` date | `date` | `text` | `date` |
+| `Uuid` | `uuid` | `blob` | `binary(16)` |
+| `serde_json::Value` / `sqlx::types::Json<T>` | `jsonb` | `text` | `json` |
+| `Vec<T>` | native array | unsupported | unsupported |
+| `Vec<u8>` | `bytea` | `blob` | `blob` |
+
+Native arrays require PostgreSQL-compatible SQLx array metadata. Use
+`sqlx::types::Json<Vec<T>>` for portable list storage. An explicit
+`#[column(type = "...")]` always wins, including when an application prefers
+`json` over `jsonb`, textual UUIDs, a domain, or custom temporal precision.
+
 ### Batch inserts, upserts, and updates
 
 Batch writes accept ordinary `Record` or `Model` slices. Mool derives the

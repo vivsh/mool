@@ -80,8 +80,8 @@ fn postgres_array_impl(parsed: &ParsedSqlEnum, crate_path: &TokenStream) -> Toke
             quote! { #crate_path::__mool_impl_sql_enum_pg_array!(#ident, int, #repr); }
         }
         Storage::NativePostgres => {
-            let array_name = format!("_{}", parsed.sql_name);
-            quote! { #crate_path::__mool_impl_sql_enum_pg_array!(#ident, native, #array_name); }
+            let element_name = &parsed.sql_name;
+            quote! { #crate_path::__mool_impl_sql_enum_pg_array!(#ident, native, #element_name); }
         }
         Storage::Text | Storage::NativeMysql => {
             quote! { #crate_path::__mool_impl_sql_enum_pg_array!(#ident, text); }
