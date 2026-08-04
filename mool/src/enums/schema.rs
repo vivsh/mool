@@ -1,7 +1,7 @@
-//! Schema helpers for SQL enum mappings.
+//! Selected-dialect schema construction for models and authored metadata.
 
 use crate::Model;
-use crate::schema::{FunctionDef, IntoTable, Schema, SchemaLoadError};
+use crate::schema::{FunctionDef, IntoTable, Schema, SchemaLoadError, TableBuilder};
 use gaman::core::Dialect;
 use gaman::schema::SchemaBuilder as GamanSchemaBuilder;
 
@@ -30,12 +30,12 @@ pub trait SqlEnumSchema {
     const SQL_ENUMS: &'static [SqlEnumRegistration];
 }
 
-/// Creates an enum-aware schema builder for the selected backend.
+/// Creates a model-aware schema builder for the selected backend.
 pub fn schema() -> SchemaBuilder {
     SchemaBuilder::new()
 }
 
-/// Enum-aware wrapper around Gaman schema building.
+/// Mool's model-aware wrapper around Gaman schema construction.
 pub struct SchemaBuilder {
     dialect: Dialect,
     inner: GamanSchemaBuilder,
@@ -106,6 +106,28 @@ impl SchemaBuilder {
     /// Adds a database function definition.
     pub fn function(mut self, function: FunctionDef) -> Self {
         self.inner = self.inner.function(function);
+        self
+    }
+
+    /// Adds a verified opaque `CREATE` declaration.
+    ///
+    /// Gaman classifies the declaration and preserves its SQL for migration
+    /// diffing and replay. Invalid or ambiguous declarations fail at [`Self::build`].
+    pub fn opaque(mut self, create_sql: impl Into<String>) -> Self {
+        self.inner = self.inner.opaque(create_sql);
+        self
+    }
+
+    /// Additively configures an existing table without changing its identity.
+    ///
+    /// The callback can add modeled fields as well as unmanaged prefixes,
+    /// suffixes, and named constraints. Invalid identities fail at [`Self::build`].
+    pub fn extend_table(
+        mut self,
+        name: impl Into<String>,
+        configure: impl FnOnce(TableBuilder) -> TableBuilder,
+    ) -> Self {
+        self.inner = self.inner.extend_table(name, configure);
         self
     }
 

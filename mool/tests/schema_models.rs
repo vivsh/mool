@@ -107,6 +107,14 @@ struct CatalogItem {
 }
 
 #[derive(Debug, Clone, db::Model)]
+#[table(name = "extension_rows")]
+struct ExtensionRow {
+    #[column(primary_key)]
+    id: i64,
+    label: String,
+}
+
+#[derive(Debug, Clone, db::Model)]
 #[table(name = "invalid_references")]
 struct InvalidReference {
     #[column(primary_key)]
@@ -205,6 +213,81 @@ fn schema_builder_collects_model_tables() {
     assert_eq!(posts.foreign_keys[0].columns, vec!["author_id"]);
     assert_eq!(posts.foreign_keys[0].to_table, "users");
     assert_eq!(posts.foreign_keys[0].to_columns, vec!["id"]);
+}
+
+/// Verifies generic table extensions preserve opaque constraints on every backend.
+#[test]
+fn schema_builder_extends_modeled_tables() {
+    let schema = db::schema()
+        .model::<ExtensionRow>()
+        .extend_table("extension_rows", |table| {
+            table.opaque_constraint(
+                "extension_rows_label_nonempty",
+                "CONSTRAINT extension_rows_label_nonempty CHECK (length(label) > 0)",
+            )
+        })
+        .build()
+        .expect("extended schema");
+
+    assert!(
+        schema.tables["extension_rows"]
+            .constraints
+            .iter()
+            .any(|value| value.is_opaque())
+    );
+}
+
+/// Verifies model-derived tables accept Gaman's unmanaged and opaque metadata.
+#[cfg(feature = "postgres")]
+#[test]
+fn schema_builder_extends_tables_and_registers_opaque_entities() {
+    let schema = db::schema()
+        .model::<CatalogItem>()
+        .extend_table("catalog_items", |table| {
+            table
+                .unmanaged_prefix("UNLOGGED")
+                .unmanaged_suffix("TABLESPACE pg_default")
+        })
+        .opaque("CREATE TYPE catalog_state AS ENUM ('ready', 'complete')")
+        .opaque("CREATE INDEX catalog_items_lower_slug_idx ON catalog_items ((lower(slug)))")
+        .build()
+        .expect("extended schema");
+
+    let catalog = &schema.tables["catalog_items"];
+    assert!(catalog.has_unmanaged_options());
+    assert!(catalog.indexes.iter().any(|value| value.is_opaque()));
+    assert!(schema.enums["catalog_state"].is_opaque());
+}
+
+/// Verifies schema-builder errors remain deferred and accumulate at the terminal build.
+#[cfg(feature = "postgres")]
+#[test]
+fn schema_builder_defers_opaque_and_extension_errors() {
+    let error = db::schema()
+        .opaque("CREATE OR REPLACE VIEW recent_documents AS SELECT 1")
+        .extend_table("missing_documents", |table| {
+            table.unmanaged_prefix("UNLOGGED")
+        })
+        .build()
+        .expect_err("invalid additions must fail at build");
+    let message = error.to_string();
+
+    assert!(message.contains("CREATE OR REPLACE"));
+    assert!(message.contains("missing_documents"));
+}
+
+/// Verifies malformed unmanaged clauses fail at the terminal build on every backend.
+#[test]
+fn schema_builder_rejects_unsafe_unmanaged_clauses() {
+    let error = db::schema()
+        .model::<CatalogItem>()
+        .extend_table("catalog_items", |table| {
+            table.unmanaged_suffix("; DROP TABLE catalog_items")
+        })
+        .build()
+        .expect_err("unsafe unmanaged suffix must be rejected");
+
+    assert!(error.to_string().contains("statement terminator"));
 }
 
 /// Verifies enum-aware schema building exposes dialect validation failures.

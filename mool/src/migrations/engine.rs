@@ -5,8 +5,9 @@
 //! through Mool rather than requiring applications to couple to Gaman paths.
 
 pub use gaman::core::{
-    Answer, Clarification, ClarificationKind, ClarificationMessage, Decision, MigrationStore,
-    OptionAction, PromptEngine, Severity, StoreError, TrackingStore,
+    Answer, Clarification, ClarificationKind, ClarificationMessage, ClarificationOption, Decision,
+    MigrationStore, OptionAction, PromptEngine, Severity, StoreError, TrackingStore,
+    clarification_message,
 };
 pub use gaman::runner_factory::{
     DirectoryMigrationStore, EmbeddedMigrationStore, LazyExecutor, NativeMigrationStore,
