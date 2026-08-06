@@ -133,7 +133,7 @@ async fn published_posts() -> Result<Vec<Post>, db::DbError> {
 
     db::from(&posts)
         .filter(posts.published.eq(db::val(true)))
-        .order_by(posts.id.desc())
+        .sort(posts.id.desc())
         .all::<Post>()
         .exec(&mut pool)
         .await
@@ -255,7 +255,7 @@ let inserted = db::from(&posts)
 normal models, purpose-built records, nullable values, UUIDs, temporal values,
 JSON, and `SqlEnum` fields when their PostgreSQL array representation exists.
 
-### Filters and relations
+### Filters, sorting, and pages
 
 `Filterable` turns request-shaped structs into typed predicates. Empty optional
 values are omitted, so one filter type can serve many search forms.
@@ -276,6 +276,62 @@ let rows = db::from(&Post::table())
     .exec(&mut pool)
     .await?;
 ```
+
+Applications own their request vocabulary while Mool keeps the generated SQL
+typed. `Sortable` and `Pageable` follow the same builder-transform shape as
+`Filterable`:
+
+```rust
+enum PostOrdering {
+    Newest,
+    Title,
+    Random,
+}
+
+impl db::Sortable for PostOrdering {
+    type Model = Post;
+
+    fn apply_sort(
+        &self,
+        sort: db::SortBuilder<Post>,
+    ) -> db::SortBuilder<Post> {
+        let order = match self {
+            Self::Newest => sort.published_at.desc(),
+            Self::Title => sort.title.asc(),
+            Self::Random => db::random_order(),
+        };
+        sort.sort(order)
+    }
+}
+
+struct BrowserPagination {
+    page: Option<usize>,
+    size: Option<usize>,
+}
+
+impl db::Pageable for BrowserPagination {
+    fn apply_page(
+        &self,
+        page: db::PaginationBuilder,
+    ) -> db::PaginationBuilder {
+        page
+            .page_num(self.page.unwrap_or(1))
+            .page_size(self.size.unwrap_or(25).min(100))
+    }
+}
+
+let query = db::from(&Post::table()).filter_with(&filter);
+let query = match ordering.as_ref() {
+    Some(ordering) => query.sort_with(ordering),
+    None => query,
+};
+let page = query.page_with(&pagination, &mut pool).await?;
+```
+
+Use `.sort(column.asc())` for direct ordering and `.page(Pagination {
+page_num, page_size }, session)` when request parsing is not needed.
+`random_order()` uses each backend's trusted random function and can be costly
+for large result sets.
 
 Models can declare references, and records can flatten joined rows. Mool also
 supports back-reference and many-to-many predicates, relation aggregates, and
@@ -312,7 +368,7 @@ let recent = db::from(&posts)
         db::funcs::datetime::extract_year(posts.published_at.clone())
             .eq(db::val(2026)),
     )
-    .order_by(db::funcs::datetime::trunc_day(posts.published_at.clone()).desc());
+    .sort(db::funcs::datetime::trunc_day(posts.published_at.clone()).desc());
 
 let expires_at = db::funcs::datetime::add(
     posts.published_at.clone(),
@@ -398,6 +454,36 @@ let schema = db::schema()
     .build()?;
 ```
 
+Small deterministic configuration or reference sets can be migration-managed
+from purpose-built records. Add `ManagedRecord` to opt into Serde-backed
+migration values without imposing serialization requirements on ordinary query
+records. The complete declared set is owned: changing a row generates an update
+and removing one generates a reviewed delete migration.
+
+```rust
+#[derive(db::Model)]
+#[table(name = "app_settings")]
+struct AppSetting {
+    #[column(primary_key)]
+    key: String,
+    value: serde_json::Value,
+}
+
+#[derive(db::Record, db::ManagedRecord)]
+struct AppSettingSeed {
+    key: String,
+    value: serde_json::Value,
+}
+
+let schema = db::schema()
+    .model::<AppSetting>()
+    .managed_rows::<AppSetting>([AppSettingSeed {
+        key: "mail.reply_to".into(),
+        value: serde_json::json!("support@example.com"),
+    }])
+    .build()?;
+```
+
 The same builder can extend modeled tables with verified unmanaged clauses,
 and register opaque `CREATE` declarations while keeping validation at the
 terminal `build()` call.
@@ -470,6 +556,11 @@ For migration generation, construct `MigrationCommand::Make(...)` with
 `registry.schema_for(None)?`. A non-interactive host should return structured
 clarifications from `MigrationCommandError::NeedsInput` and resubmit the command
 with decisions rather than prompting internally.
+
+Framework command handlers can use
+`db::migrations::engine::EntityFilter::parse("[kind:]glob")` to pass repeated
+CLI migration filters to Gaman's `MakeCommand::Generate` protocol. Mool does
+not add a schema or query filtering API for migration selection.
 
 ## Testing
 

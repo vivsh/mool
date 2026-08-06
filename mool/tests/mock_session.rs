@@ -178,7 +178,13 @@ async fn pagination_overflow_makes_no_session_calls() {
     session.strict = false;
 
     let error = db::from(&posts)
-        .page::<Post, _>(usize::MAX, 2, &mut session)
+        .page::<Post, _>(
+            db::Pagination {
+                page_num: usize::MAX,
+                page_size: 2,
+            },
+            &mut session,
+        )
         .await
         .expect_err("pagination offset must overflow");
 

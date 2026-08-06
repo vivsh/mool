@@ -6,7 +6,7 @@ error[E0277]: the trait bound `NaiveDateTime: SqlTimestamp` is not satisfied
   |
   = help: the following other types implement trait `SqlTimestamp`:
             DateTime<Utc>
-            Option<DateTime<Utc>>
+            std::option::Option<DateTime<Utc>>
 note: required by a bound in `trunc_day`
  --> src/datetime/portable.rs
   |

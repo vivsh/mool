@@ -20,6 +20,12 @@ pub fn derive_record(input: TokenStream) -> TokenStream {
     mool_macros_impl::record::derive_record(input.into(), runtime_path()).into()
 }
 
+/// Derives physical-column mapping for migration-managed record values.
+#[proc_macro_derive(ManagedRecord, attributes(column, table, db))]
+pub fn derive_managed_record(input: TokenStream) -> TokenStream {
+    mool_macros_impl::record::derive_managed_record(input.into(), runtime_path()).into()
+}
+
 #[proc_macro_derive(Model, attributes(column, table, db))]
 pub fn derive_model(input: TokenStream) -> TokenStream {
     mool_macros_impl::model::derive_model(input.into(), runtime_path()).into()

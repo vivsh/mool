@@ -1,7 +1,8 @@
 //! Selected-dialect schema construction for models and authored metadata.
 
-use crate::Model;
+use crate::managed_rows::ManagedRecordAdapter;
 use crate::schema::{FunctionDef, IntoTable, Schema, SchemaLoadError, TableBuilder};
+use crate::{ManagedRecord, Model};
 use gaman::core::Dialect;
 use gaman::schema::SchemaBuilder as GamanSchemaBuilder;
 
@@ -75,6 +76,22 @@ impl SchemaBuilder {
             self = registration.apply(self);
         }
         self.table::<T>()
+    }
+
+    /// Adds the complete desired managed-row set for one registered model table.
+    ///
+    /// The target model must be added through [`Self::model`] or [`Self::table`]
+    /// in the same builder. Gaman validates the target, keys, and row values at
+    /// [`Self::build`].
+    pub fn managed_rows<M>(mut self, rows: impl IntoIterator<Item = impl ManagedRecord>) -> Self
+    where
+        M: Model,
+    {
+        let table = M::into_table(&self.dialect).qualified_name();
+        self.inner = self
+            .inner
+            .managed_rows(table, rows.into_iter().map(ManagedRecordAdapter));
+        self
     }
 
     /// Adds a native enum type when the current dialect can manage it.

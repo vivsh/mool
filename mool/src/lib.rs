@@ -16,9 +16,11 @@ mod executor;
 pub mod filters;
 #[cfg(mool_has_backend)]
 mod interfaces;
+#[cfg(mool_has_backend)]
+mod managed_rows;
 pub mod migrations;
 #[cfg(mool_has_backend)]
-mod page;
+pub mod pagination;
 #[cfg(mool_has_backend)]
 mod placeholders;
 pub mod prelude;
@@ -32,6 +34,8 @@ mod raw;
 pub mod relations;
 pub mod schema;
 #[cfg(mool_has_backend)]
+pub mod sorting;
+#[cfg(mool_has_backend)]
 mod statement;
 #[cfg(all(mool_has_backend, feature = "test-support"))]
 pub mod testing;
@@ -39,7 +43,15 @@ pub mod testing;
 pub mod types;
 
 pub use gaman;
+pub use serde;
+pub use serde_json;
 pub use sqlx;
+
+#[cfg(mool_has_backend)]
+#[doc(hidden)]
+pub mod __private {
+    pub use crate::managed_rows::managed_row_value;
+}
 
 extern crate self as mool;
 
@@ -59,11 +71,13 @@ pub use executor::*;
 pub use filters::{FilterBuilder, Filterable};
 #[cfg(mool_has_backend)]
 pub use interfaces::{BatchRecord, Model, ModelSchema, Record, RecordSchema};
+#[cfg(mool_has_backend)]
+pub use managed_rows::{ManagedRecord, ManagedRecordError};
 #[cfg(feature = "migrations")]
 pub use migrations::EmbeddedMigrations;
-pub use mool_macros::{Filterable, Model, Record, SqlEnum};
+pub use mool_macros::{Filterable, ManagedRecord, Model, Record, SqlEnum};
 #[cfg(mool_has_backend)]
-pub use page::Page;
+pub use pagination::{Page, Pageable, Pagination, PaginationBuilder};
 #[cfg(mool_has_backend)]
 pub use placeholders::SqlDialect;
 #[cfg(mool_has_backend)]
@@ -80,6 +94,8 @@ pub use relations::{
     Backref, JoinColumn, JoinCtx, JoinRelation, JoinType, ManyBackref, ManyToMany, OneBackref,
     Prefetch, PrefetchKey, ReceivesPrefetch, ReferenceMeta, RelationCardinality, prefetch,
 };
+#[cfg(mool_has_backend)]
+pub use sorting::{SortBuilder, Sortable, random_order};
 #[cfg(mool_has_backend)]
 pub use statement::Statement;
 

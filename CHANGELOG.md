@@ -29,6 +29,8 @@ Changelog structure and Rust semantic-versioning conventions.
   APIs. Record-backed `.set(...)` overrides and explicit transactions remain.
 - Replace macro token-name matching for temporal and PostgreSQL array columns
   with trait-based Chrono, `time`, UUID, JSON, and SQLx array inference.
+- Replace `.order_by(...)` with `.sort(...)` and replace positional pagination
+  with `.page(Pagination { page_num, page_size }, session)`.
 
 ### Added
 
@@ -49,6 +51,10 @@ Changelog structure and Rust semantic-versioning conventions.
   `time` crate integration without replacement temporal value types.
 - Alias-safe UUID and JSON model schema inference, including typed
   `sqlx::types::Json<T>` values and SQLx-compatible PostgreSQL arrays.
+- Record-backed managed rows for migration-owned configuration and reference
+  data, including complete-set insert, update, and reviewed delete planning.
+- Application-implemented `Sortable` and `Pageable` traits, plus typed
+  `sort_with(...)`, `page_with(...)`, and dialect-aware `random_order()`.
 
 ### Compatibility Notes
 

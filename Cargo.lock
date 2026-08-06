@@ -483,9 +483,9 @@ dependencies = [
 
 [[package]]
 name = "gaman"
-version = "0.3.30"
+version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf60912afaa88c26667411042737412c61bef9d2b2fa319f52dabd9840a99347"
+checksum = "5f077b5018a6c19e1291057d7dc03d2bef946ed81131325aa0da690d63c42a46"
 dependencies = [
  "gaman-core",
  "serde",
@@ -498,9 +498,9 @@ dependencies = [
 
 [[package]]
 name = "gaman-core"
-version = "0.3.30"
+version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "376424e143ceb881b2104aac7fc1af60e7612d8fbcb54fc929753091e23a1a3c"
+checksum = "4763f384bc062f0de4d8e287a24cf34eccfa4df8e3b7f192be3895e213b5bd0f"
 dependencies = [
  "chrono",
  "serde",
@@ -897,10 +897,11 @@ dependencies = [
 
 [[package]]
 name = "mool"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "chrono",
  "gaman",
+ "gaman-core",
  "indexmap",
  "mool-macros",
  "proptest",
@@ -921,7 +922,7 @@ dependencies = [
 
 [[package]]
 name = "mool-macros"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "mool-macros-impl",
  "proc-macro-crate",
@@ -931,7 +932,7 @@ dependencies = [
 
 [[package]]
 name = "mool-macros-impl"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "darling",
  "heck 0.4.1",

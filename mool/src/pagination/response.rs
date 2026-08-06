@@ -1,3 +1,5 @@
+//! Paginated query result envelope.
+
 /// A page of results from a paginated query.
 #[derive(Clone, Debug, serde::Serialize, schemars::JsonSchema)]
 pub struct Page<T> {

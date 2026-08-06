@@ -23,6 +23,23 @@ pub fn derive_record(
     derive_record_impl(&input, runtime_path, &[])
 }
 
+/// Derives physical-column serialization for one migration-managed record.
+pub fn derive_managed_record(
+    input: proc_macro2::TokenStream,
+    runtime_path: proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    let input = match syn::parse2::<DeriveInput>(input) {
+        Ok(input) => input,
+        Err(err) => return err.to_compile_error(),
+    };
+    let parsed = match ParsedStruct::from_derive_input(input.clone()) {
+        Ok(parsed) => parsed,
+        Err(error) => return error.to_compile_error(),
+    };
+    let crate_path = crate::runtime_path(&input, runtime_path);
+    gen_managed_record_impl(&parsed, &crate_path)
+}
+
 /// Internal implementation of Record derive macro.
 pub(crate) fn derive_record_impl(
     input: &DeriveInput,
@@ -192,6 +209,88 @@ pub(crate) fn derive_record_impl(
 
         #typed_handles
     }
+}
+
+/// Generates physical-column serialization for migration-managed records.
+fn gen_managed_record_impl(
+    parsed: &ParsedStruct,
+    crate_path: &proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    let ident = &parsed.ident;
+    let mut generics = parsed.generics.clone();
+    let where_clause = generics.make_where_clause();
+    let statements = managed_value_statements(&parsed.fields, crate_path, where_clause);
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    quote! {
+        impl #impl_generics #crate_path::ManagedRecord for #ident #ty_generics #where_clause {
+            fn managed_values(
+                &self,
+            ) -> Result<
+                ::std::collections::BTreeMap<::std::string::String, #crate_path::serde_json::Value>,
+                #crate_path::ManagedRecordError,
+            > {
+                let mut values = ::std::collections::BTreeMap::new();
+                #(#statements)*
+                Ok(values)
+            }
+        }
+    }
+}
+
+/// Builds managed-row collection statements and serialization bounds.
+fn managed_value_statements(
+    fields: &[FieldMeta],
+    crate_path: &proc_macro2::TokenStream,
+    where_clause: &mut syn::WhereClause,
+) -> Vec<proc_macro2::TokenStream> {
+    fields
+        .iter()
+        .filter(|field| is_insertable(field))
+        .filter_map(|field| managed_value_statement(field, crate_path, where_clause))
+        .collect()
+}
+
+/// Serializes one insertable record field by physical database column name.
+fn managed_value_statement(
+    field: &FieldMeta,
+    crate_path: &proc_macro2::TokenStream,
+    where_clause: &mut syn::WhereClause,
+) -> Option<proc_macro2::TokenStream> {
+    let ident = field.ident.as_ref()?;
+    if is_flatten(field) {
+        let ty = &field.ty;
+        where_clause.predicates.push(syn::parse_quote! {
+            #ty: #crate_path::ManagedRecord
+        });
+        return Some(quote! {
+            for (column, value) in #crate_path::ManagedRecord::managed_values(&self.#ident)? {
+                if values.insert(column.clone(), value).is_some() {
+                    return Err(#crate_path::ManagedRecordError::DuplicateColumn { column });
+                }
+            }
+        });
+    }
+
+    let ty = &field.ty;
+    where_clause.predicates.push(syn::parse_quote! {
+        #ty: #crate_path::serde::Serialize
+    });
+    let column = field
+        .column
+        .name
+        .as_ref()
+        .map(|name| name.value())
+        .or_else(|| field.ident.as_ref().map(ToString::to_string))?;
+    Some(quote! {
+        {
+            let column = #column.to_string();
+            let value = #crate_path::__private::managed_row_value(&self.#ident, &column)?;
+            if values.insert(column.clone(), value).is_some() {
+                return Err(#crate_path::ManagedRecordError::DuplicateColumn { column });
+            }
+        }
+    })
 }
 
 /// Generate where clause predicates for Record trait bounds.

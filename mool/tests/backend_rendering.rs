@@ -38,6 +38,47 @@ struct BackendPostPatch {
     published: bool,
 }
 
+#[derive(Clone, Copy)]
+enum BackendOrdering {
+    TitleThenId,
+}
+
+impl db::Sortable for BackendOrdering {
+    type Model = BackendPost;
+
+    fn apply_sort(&self, sort: db::SortBuilder<Self::Model>) -> db::SortBuilder<Self::Model> {
+        let title = sort.title.asc();
+        let id = sort.id.desc();
+        match self {
+            Self::TitleThenId => sort.sort(title).sort(id),
+        }
+    }
+}
+
+struct CompletePagination;
+
+impl db::Pageable for CompletePagination {
+    fn apply_page(&self, page: db::PaginationBuilder) -> db::PaginationBuilder {
+        page.page_num(2).page_size(3)
+    }
+}
+
+struct MissingPageSize;
+
+impl db::Pageable for MissingPageSize {
+    fn apply_page(&self, page: db::PaginationBuilder) -> db::PaginationBuilder {
+        page.page_num(2)
+    }
+}
+
+struct MissingPageNumber;
+
+impl db::Pageable for MissingPageNumber {
+    fn apply_page(&self, page: db::PaginationBuilder) -> db::PaginationBuilder {
+        page.page_size(3)
+    }
+}
+
 #[derive(Debug, Clone, db::Model)]
 #[table(
     name = "backend_memberships",
@@ -99,6 +140,11 @@ const CAST_SQL: &str = "SELECT CAST((backend_posts.id + ?) AS REAL) FROM backend
 #[cfg(any(feature = "mysql", feature = "mariadb"))]
 const CAST_SQL: &str = "SELECT CAST((backend_posts.id + ?) AS DOUBLE) FROM backend_posts LIMIT 1";
 
+#[cfg(any(feature = "postgres", feature = "sqlite"))]
+const RANDOM_ORDER_SQL: &str = "SELECT backend_posts.id, backend_posts.title, backend_posts.published FROM backend_posts ORDER BY RANDOM() ASC";
+#[cfg(any(feature = "mysql", feature = "mariadb"))]
+const RANDOM_ORDER_SQL: &str = "SELECT backend_posts.id, backend_posts.title, backend_posts.published FROM backend_posts ORDER BY RAND() ASC";
+
 /// Verifies the selected backend owns placeholder reuse and bind ordering.
 #[test]
 fn selected_backend_renders_typed_variables() {
@@ -155,6 +201,175 @@ fn selected_backend_renders_repeated_custom_arguments() {
             .flat_map(|parameter| parameter.occurrences.iter().copied())
             .collect::<Vec<_>>(),
         vec![1, 2]
+    );
+}
+
+/// Verifies application-owned sort inputs append typed ordering expressions.
+#[test]
+fn selected_backend_composes_direct_and_typed_sorting() {
+    let posts = BackendPost::table();
+    let plan = db::from(&posts)
+        .sort(posts.published.desc())
+        .sort_with(&BackendOrdering::TitleThenId)
+        .all::<BackendPost>()
+        .plan()
+        .expect("valid typed ordering");
+
+    assert_eq!(
+        plan.sql,
+        "SELECT backend_posts.id, backend_posts.title, backend_posts.published FROM backend_posts ORDER BY backend_posts.published DESC, backend_posts.title ASC, backend_posts.id DESC"
+    );
+    assert_eq!(plan.prebound_count, 0);
+    assert_eq!(plan.dynamic_bind_count, 0);
+    assert_eq!(plan.total_bind_count, 0);
+}
+
+/// Verifies queries without sort input omit ORDER BY entirely.
+#[test]
+fn selected_backend_omits_ordering_without_sort_input() {
+    let posts = BackendPost::table();
+    let plan = db::from(&posts)
+        .all::<BackendPost>()
+        .plan()
+        .expect("valid unordered query");
+
+    assert!(!plan.sql.contains(" ORDER BY "));
+    assert_eq!(plan.total_bind_count, 0);
+}
+
+/// Verifies random ordering renders the selected backend's trusted function.
+#[test]
+fn selected_backend_renders_random_ordering() {
+    let posts = BackendPost::table();
+    let plan = db::from(&posts)
+        .sort(db::random_order())
+        .all::<BackendPost>()
+        .plan()
+        .expect("valid random ordering");
+
+    assert_eq!(plan.sql, RANDOM_ORDER_SQL);
+    assert_eq!(plan.prebound_count, 0);
+    assert_eq!(plan.dynamic_bind_count, 0);
+    assert_eq!(plan.total_bind_count, 0);
+}
+
+/// Verifies incomplete pageable input fails before any session call is issued.
+#[tokio::test]
+async fn selected_backend_rejects_incomplete_pageable_before_execution() {
+    let posts = BackendPost::table();
+    let mut session = MockDbSession::new();
+    let error = db::from(&posts)
+        .page_with::<BackendPost, _, _>(&MissingPageSize, &mut session)
+        .await
+        .expect_err("missing page size must fail");
+
+    assert!(matches!(
+        error,
+        db::DbError::QuerySet(db::QueryError::MissingPageSize)
+    ));
+    assert!(session.recorded.is_empty());
+
+    let mut session = MockDbSession::new();
+    let error = db::from(&posts)
+        .page_with::<BackendPost, _, _>(&MissingPageNumber, &mut session)
+        .await
+        .expect_err("missing page number must fail");
+    assert!(matches!(
+        error,
+        db::DbError::QuerySet(db::QueryError::MissingPageNumber)
+    ));
+    assert!(session.recorded.is_empty());
+
+    let mut session = MockDbSession::new();
+    let error = db::from(&posts)
+        .page::<BackendPost, _>(
+            db::Pagination {
+                page_num: usize::MAX,
+                page_size: 2,
+            },
+            &mut session,
+        )
+        .await
+        .expect_err("overflow must fail before execution");
+    assert!(matches!(
+        error,
+        db::DbError::QuerySet(db::QueryError::PaginationOverflow { .. })
+    ));
+    assert!(session.recorded.is_empty());
+}
+
+/// Verifies direct and trait-based pagination use the existing page terminal semantics.
+#[tokio::test]
+async fn selected_backend_executes_direct_and_typed_pagination() {
+    let posts = BackendPost::table();
+    let mut session = MockDbSession::new();
+    session.plan(PlannedCall {
+        kind: DbCallKind::FetchScalar,
+        matcher: StatementMatcher::Any,
+        response: PlannedResponse::OkAny(Box::new(1_i64)),
+    });
+    session.plan(PlannedCall {
+        kind: DbCallKind::FetchAll,
+        matcher: StatementMatcher::Any,
+        response: PlannedResponse::OkAnyVec(Box::new(vec![BackendPost {
+            id: 1,
+            title: "one".to_string(),
+            published: true,
+        }])),
+    });
+
+    let direct = db::from(&posts)
+        .page::<BackendPost, _>(
+            db::Pagination {
+                page_num: 0,
+                page_size: 0,
+            },
+            &mut session,
+        )
+        .await
+        .expect("zero values normalize to one");
+    assert_eq!(direct.page, 1);
+    assert_eq!(direct.per_page, 1);
+    assert_eq!(session.recorded.len(), 2);
+    assert_eq!(
+        session.recorded[0].stmt.sql(),
+        "SELECT COUNT(*) FROM backend_posts"
+    );
+    assert_eq!(
+        session.recorded[1].stmt.sql(),
+        "SELECT backend_posts.id, backend_posts.title, backend_posts.published FROM backend_posts LIMIT 1 OFFSET 0"
+    );
+
+    let mut session = MockDbSession::new();
+    session.plan(PlannedCall {
+        kind: DbCallKind::FetchScalar,
+        matcher: StatementMatcher::Any,
+        response: PlannedResponse::OkAny(Box::new(1_i64)),
+    });
+    session.plan(PlannedCall {
+        kind: DbCallKind::FetchAll,
+        matcher: StatementMatcher::Any,
+        response: PlannedResponse::OkAnyVec(Box::new(vec![BackendPost {
+            id: 1,
+            title: "one".to_string(),
+            published: true,
+        }])),
+    });
+
+    let typed = db::from(&posts)
+        .page_with::<BackendPost, _, _>(&CompletePagination, &mut session)
+        .await
+        .expect("complete typed pagination");
+    assert_eq!(typed.page, 2);
+    assert_eq!(typed.per_page, 3);
+    assert_eq!(session.recorded.len(), 2);
+    assert_eq!(
+        session.recorded[0].stmt.sql(),
+        "SELECT COUNT(*) FROM backend_posts"
+    );
+    assert_eq!(
+        session.recorded[1].stmt.sql(),
+        "SELECT backend_posts.id, backend_posts.title, backend_posts.published FROM backend_posts LIMIT 3 OFFSET 3"
     );
 }
 
@@ -732,7 +947,7 @@ fn selected_backend_renders_postgres_distinct_on() {
     let posts = BackendPost::table();
     let plan = db::from(&posts)
         .distinct_on(posts.title.clone())
-        .order_by(posts.title.asc())
+        .sort(posts.title.asc())
         .all::<BackendPost>()
         .plan()
         .expect("valid PostgreSQL distinct-on query");

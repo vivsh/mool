@@ -21,6 +21,7 @@ pub use gaman::{
     SchemaCheckStatus, SchemaInspector, SqlInput, TlsMode,
 };
 pub use gaman::{RunnerCommand as MigrationCommand, RunnerCommandError as MigrationCommandError};
+pub use gaman_core::EntityFilter;
 
 /// PostgreSQL SQLx executor used by the Mool migration engine.
 #[cfg(feature = "postgres")]

@@ -77,6 +77,10 @@ pub enum QueryError {
     MismatchedBatchColumns { expected: usize, got: usize },
     #[error("pagination offset overflow for page {page} and per_page {per_page}")]
     PaginationOverflow { page: usize, per_page: usize },
+    #[error("pagination input is missing a page number")]
+    MissingPageNumber,
+    #[error("pagination input is missing a page size")]
+    MissingPageSize,
 }
 
 /// Row locking mode for SELECT ... FOR UPDATE / FOR SHARE.

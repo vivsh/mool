@@ -36,6 +36,13 @@ struct PostSummary {
     title: String,
 }
 
+#[derive(Debug, Clone, db::Record, db::ManagedRecord)]
+struct ManagedSetting {
+    #[column(name = "setting_key")]
+    key: String,
+    value: serde_json::Value,
+}
+
 #[derive(Debug, Clone, db::Record)]
 struct PostWithAuthor {
     #[column(flatten)]
@@ -53,6 +60,28 @@ struct PostFilter {
     q: Option<String>,
     #[filter(op = "in", column = "id")]
     ids: Vec<i64>,
+}
+
+struct PostOrdering;
+
+impl db::Sortable for PostOrdering {
+    type Model = Post;
+
+    fn apply_sort(
+        &self,
+        sort: db::SortBuilder<Self::Model>,
+    ) -> db::SortBuilder<Self::Model> {
+        let order = sort.title.asc();
+        sort.sort(order)
+    }
+}
+
+struct BrowserPagination;
+
+impl db::Pageable for BrowserPagination {
+    fn apply_page(&self, page: db::PaginationBuilder) -> db::PaginationBuilder {
+        page.page_num(1).page_size(25)
+    }
 }
 
 struct PostComments;
@@ -81,6 +110,11 @@ impl db::Backref for PostComments {
 impl db::ManyBackref for PostComments {}
 
 fn main() {
+    let setting = ManagedSetting {
+        key: "mail.reply_to".to_string(),
+        value: serde_json::json!("support@example.com"),
+    };
+    let _ = db::ManagedRecord::managed_values(&setting).unwrap();
     let posts = Post::table();
     let filter = PostFilter {
         status: Some(Status::Published),
@@ -90,10 +124,13 @@ fn main() {
 
     let _ = db::from(&posts)
         .filter_with(&filter)
+        .sort_with(&PostOrdering)
         .filter(db::backref::<PostComments>(&posts).exists())
         .all::<PostSummary>()
         .plan()
         .unwrap();
+
+    let _ = db::Pageable::apply_page(&BrowserPagination, db::PaginationBuilder::new());
 
     let _ = db::from(&posts)
         .all::<PostWithAuthor>()

@@ -1,10 +1,12 @@
 use db::migrations::engine::{
     ApplyCommand, COMMAND_PROTOCOL_VERSION, CommandDiagnostic, CommandEnvelope, CommandFailure,
-    CommandRequest, CommandResponse, CommandResult, Config, DiagnosticCode, Executor, MakeCommand,
-    MigrationCommand, MigrationCommandError, MigrationEngine, MigrationRunner, MigrationStore,
+    CommandRequest, CommandResponse, CommandResult, Config, DiagnosticCode, EntityFilter,
+    Executor, MakeCommand, MigrationCommand, MigrationCommandError, MigrationEngine,
+    MigrationRunner, MigrationStore,
     NativeRunnerFactory, RepairOptions, SchemaCheckFailure, SchemaCheckInput, SchemaCheckResult,
     SchemaCheckStatus, SchemaInspector, SqlInput, TrackingStore,
 };
+use db::schema::Schema;
 use mool as db;
 
 fn accepts_engine<M, T, E>(_engine: MigrationEngine<M, T, E>)
@@ -23,6 +25,16 @@ where
 {
 }
 
+fn accepts_make_filters(schema: Schema, filters: Vec<EntityFilter>) {
+    let _ = MakeCommand::Generate {
+        schema,
+        name: None,
+        dry_run: true,
+        decisions: Vec::new(),
+        filters,
+    };
+}
+
 fn main() {
     let command = MigrationCommand::Apply(ApplyCommand::Plan);
     let _: CommandRequest = command.clone();
@@ -34,6 +46,7 @@ fn main() {
     let _make = MakeCommand::Empty {
         name: "baseline".to_string(),
     };
+    let _filter = EntityFilter::parse("table:posts").expect("valid entity filter");
     let _schema_input = SchemaCheckInput::Sql(SqlInput {
         name: "schema.sql".to_string(),
         sql: "SELECT 1".to_string(),

@@ -9,6 +9,7 @@ use crate::commons::Arguments;
 use crate::filters::{FilterBuilder, Filterable};
 use crate::interfaces::{Model, Record};
 use crate::placeholders::Dialect;
+use crate::sorting::{SortBuilder, Sortable};
 
 use super::batch::BatchInsertMode;
 use super::binds::validate_output_assignments;
@@ -106,8 +107,19 @@ impl QueryScope {
     }
 
     /// Adds an ORDER BY expression.
-    pub fn order_by(mut self, expr: OrderExpr) -> Self {
-        self.orders.push(expr);
+    pub fn sort(mut self, order: OrderExpr) -> Self {
+        self.orders.push(order);
+        self
+    }
+
+    /// Applies a typed, model-bound ordering to this query's ORDER BY clause.
+    pub fn sort_with<S>(mut self, ordering: &S) -> Self
+    where
+        S: Sortable,
+    {
+        let builder = SortBuilder::new(<S::Model as crate::Model>::table());
+        self.orders
+            .extend(ordering.apply_sort(builder).into_orders());
         self
     }
 

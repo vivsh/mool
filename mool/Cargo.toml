@@ -1,6 +1,6 @@
 [package]
 name = "mool"
-version = "0.2.4"
+version = "0.2.5"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -29,8 +29,9 @@ time = ["dep:time", "gaman/time-types", "sqlx/time"]
 [dependencies]
 chrono.workspace = true
 gaman.workspace = true
+gaman-core.workspace = true
 indexmap.workspace = true
-mool-macros = { path = "../mool-macros", version = "0.1.5" }
+mool-macros = { path = "../mool-macros", version = "0.1.6" }
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true

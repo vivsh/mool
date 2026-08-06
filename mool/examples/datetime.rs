@@ -17,7 +17,7 @@ fn main() -> Result<(), db::QueryError> {
                 .lte(db::funcs::datetime::now::<chrono::DateTime<chrono::Utc>>()),
         )
         .filter(db::funcs::datetime::extract_year(events.happened_at.clone()).eq(db::val(2026)))
-        .order_by(db::funcs::datetime::trunc_day(events.happened_at.clone()).desc())
+        .sort(db::funcs::datetime::trunc_day(events.happened_at.clone()).desc())
         .all::<Event>()
         .plan()?;
 

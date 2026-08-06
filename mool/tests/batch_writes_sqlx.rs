@@ -91,7 +91,7 @@ async fn selected_backend_executes_batch_write_lifecycle(pool: db::backend::Pool
 
     assert_eq!(count(&mut pool).await, 4);
     let rows = db::from(&table)
-        .order_by(table.id.asc())
+        .sort(table.id.asc())
         .all::<BatchPost>()
         .exec(&mut pool)
         .await

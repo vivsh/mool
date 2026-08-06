@@ -27,7 +27,7 @@ fn read_golden_query_covers_projection_filters_grouping_and_binds() {
         .filter(post.id.in_values([1_i64, 2_i64, 3_i64]))
         .group_by(post.author_id.clone())
         .having(db::funcs::count(post.id.clone()).gt(db::val(1_i64)))
-        .order_by(post.author_id.asc())
+        .sort(post.author_id.asc())
         .all::<PostStats>()
         .set(&out.author_id, post.author_id.clone())
         .set(&out.post_count, db::funcs::count(post.id.clone()))
@@ -136,7 +136,7 @@ fn grouped_terminals_preserve_group_by_and_having() {
 fn scalar_terminal_preserves_ordering_and_limits_one_row() {
     let posts = Post::table();
     let plan = db::from(&posts)
-        .order_by(posts.id.desc())
+        .sort(posts.id.desc())
         .scalar(posts.title.clone())
         .plan()
         .expect("ordered scalar");

@@ -10,6 +10,8 @@ use super::FilterBuilder;
 /// Implementations should append predicates through [`FilterBuilder::filter`].
 /// They must not execute queries or add ordering, pagination, relation loading,
 /// writes, or any other non-WHERE behavior.
+/// [`crate::Sortable`] and [`crate::Pageable`] provide the matching narrow
+/// contracts for ordering and request-side pagination.
 pub trait Filterable {
     /// The root model this filter can be applied to.
     type Model: Model + HasCols;
