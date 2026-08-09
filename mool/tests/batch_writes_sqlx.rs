@@ -64,7 +64,7 @@ async fn selected_backend_executes_batch_write_lifecycle(pool: db::backend::Pool
         post(3, "three", "Three"),
     ];
     let inserted = db::from(&table)
-        .batch_insert(&rows)
+        .insert_many(&rows)
         .batch_size(2)
         .exec(&mut pool)
         .await
@@ -73,7 +73,7 @@ async fn selected_backend_executes_batch_write_lifecycle(pool: db::backend::Pool
 
     let upserts = [post(2, "two", "Two updated"), post(4, "four", "Four")];
     db::from(&table)
-        .batch_upsert(&upserts, &table.slug)
+        .upsert_many(&upserts, &table.slug)
         .update_only(&table.title)
         .exec(&mut pool)
         .await
@@ -84,7 +84,7 @@ async fn selected_backend_executes_batch_write_lifecycle(pool: db::backend::Pool
         post(3, "three", "Three updated"),
     ];
     db::from(&table)
-        .batch_update(&updates, (&table.title, &table.published))
+        .update_many(&updates, (&table.title, &table.published))
         .exec(&mut pool)
         .await
         .expect("model batch update");
@@ -107,7 +107,7 @@ async fn selected_backend_ignores_conflicting_batch_rows(pool: db::backend::Pool
     let mut pool = setup(pool).await;
     let table = BatchPost::table();
     db::from(&table)
-        .batch_insert(&[post(1, "same", "Original")])
+        .insert_many(&[post(1, "same", "Original")])
         .exec(&mut pool)
         .await
         .expect("seed conflict row");
@@ -115,14 +115,14 @@ async fn selected_backend_ignores_conflicting_batch_rows(pool: db::backend::Pool
 
     #[cfg(any(feature = "postgres", feature = "sqlite"))]
     db::from(&table)
-        .batch_insert(&rows)
+        .insert_many(&rows)
         .ignore_conflicts_on(&table.slug)
         .exec(&mut pool)
         .await
         .expect("exact conflict ignore");
     #[cfg(any(feature = "mysql", feature = "mariadb"))]
     db::from(&table)
-        .batch_insert(&rows)
+        .insert_many(&rows)
         .ignore_errors()
         .exec(&mut pool)
         .await
@@ -138,14 +138,14 @@ async fn selected_backend_batch_atomicity_is_explicit(pool: db::backend::Pool) {
     let mut pool = setup(pool).await;
     let table = BatchPost::table();
     db::from(&table)
-        .batch_insert(&[post(1, "existing", "Existing")])
+        .insert_many(&[post(1, "existing", "Existing")])
         .exec(&mut pool)
         .await
         .expect("seed duplicate");
     let rows = [post(2, "first", "First"), post(3, "existing", "Duplicate")];
     assert!(
         db::from(&table)
-            .batch_insert(&rows)
+            .insert_many(&rows)
             .batch_size(1)
             .exec(&mut pool)
             .await
@@ -160,7 +160,7 @@ async fn selected_backend_batch_atomicity_is_explicit(pool: db::backend::Pool) {
     ];
     assert!(
         db::from(&table)
-            .batch_insert(&transactional)
+            .insert_many(&transactional)
             .batch_size(1)
             .exec(&mut transaction)
             .await
@@ -233,7 +233,7 @@ async fn postgres_executes_generated_unnest_arrays(pool: db::backend::Pool) {
     ];
     let returned = db::from(&table)
         .returning::<UnnestRow>()
-        .batch_insert(&rows)
+        .insert_many(&rows)
         .using_unnest()
         .exec(&mut pool)
         .await
@@ -247,7 +247,7 @@ async fn postgres_executes_generated_unnest_arrays(pool: db::backend::Pool) {
 
     let ignored = db::from(&table)
         .returning::<UnnestRow>()
-        .batch_insert(&rows[..1])
+        .insert_many(&rows[..1])
         .using_unnest()
         .ignore_conflicts_on(&table.external_id)
         .exec(&mut pool)
@@ -264,7 +264,7 @@ async fn postgres_executes_generated_unnest_arrays(pool: db::backend::Pool) {
     }];
     let updated = db::from(&table)
         .returning::<UnnestRow>()
-        .batch_upsert(&changed, &table.external_id)
+        .upsert_many(&changed, &table.external_id)
         .update_only((&table.metadata, &table.subtitle, &table.status))
         .using_unnest()
         .exec(&mut pool)

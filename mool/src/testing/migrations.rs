@@ -40,7 +40,7 @@ pub(crate) async fn apply(
         .map(|_| ())
         .map_err(|source| TestDatabaseError::Migrations {
             target: target.identity().to_string(),
-            source,
+            source: Box::new(source),
         })
 }
 

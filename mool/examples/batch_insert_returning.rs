@@ -33,7 +33,7 @@ fn main() -> Result<(), db::QueryError> {
 
     let plan = db::from(&posts)
         .returning::<Post>()
-        .batch_insert(&rows)
+        .insert_many(&rows)
         .ignore_conflicts_on(&posts.slug)
         .plan()?;
 

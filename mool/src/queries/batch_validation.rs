@@ -90,7 +90,7 @@ where
 {
     if conflict.is_empty() {
         return Err(QueryError::BindError(
-            "batch_upsert requires conflict columns".to_string(),
+            "upsert_many requires conflict columns".to_string(),
         ));
     }
     validate_unique_columns(conflict, "upsert conflict target")?;
@@ -179,7 +179,7 @@ where
         .collect::<Vec<_>>();
     if columns.is_empty() {
         return Err(QueryError::BindError(
-            "batch_upsert has no inserted, updateable non-conflict columns".to_string(),
+            "upsert_many has no inserted, updateable non-conflict columns".to_string(),
         ));
     }
     Ok(columns)
@@ -232,14 +232,14 @@ where
 {
     if columns.is_empty() {
         return Err(QueryError::BindError(
-            "batch_update requires at least one update column".to_string(),
+            "update_many requires at least one update column".to_string(),
         ));
     }
     let writable = T::record_update_column_names();
     for column in columns {
         if primary_keys.iter().any(|key| *key == column.name.as_ref()) {
             return Err(QueryError::BindError(format!(
-                "batch_update cannot change primary-key column '{}'",
+                "update_many cannot change primary-key column '{}'",
                 column.name
             )));
         }

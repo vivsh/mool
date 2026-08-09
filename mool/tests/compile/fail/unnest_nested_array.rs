@@ -16,7 +16,7 @@ fn main() {
         values: vec![1, 2],
     }];
     let _ = db::from(&table)
-        .batch_insert(&rows)
+        .insert_many(&rows)
         .using_unnest()
         .plan();
 }

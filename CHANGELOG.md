@@ -7,6 +7,9 @@ Changelog structure and Rust semantic-versioning conventions.
 
 ### Changed
 
+- Rename the multi-row write terminals from `batch_insert`, `batch_upsert`,
+  and `batch_update` to `insert_many`, `upsert_many`, and `update_many`.
+  `batch_size()` remains the statement-chunking control.
 - Require exactly one compile-time backend: PostgreSQL, SQLite, MySQL, or MariaDB.
 - Select one renderer and expose backend capabilities through `mool::prelude`.
 - Remove public runtime query dialect selection from planning and statements.

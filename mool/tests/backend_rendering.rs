@@ -383,7 +383,7 @@ fn selected_backend_renders_upsert() {
     };
     let rows = [patch];
     let plan = db::from(&posts)
-        .batch_upsert(&rows, [&posts.title])
+        .upsert_many(&rows, [&posts.title])
         .plan()
         .expect("valid selected-backend upsert");
 
@@ -432,7 +432,7 @@ fn selected_backend_exposes_ordered_batch_plans() {
             published: true,
         },
     ];
-    let operation = db::from(&posts).batch_insert(&rows).batch_size(2);
+    let operation = db::from(&posts).insert_many(&rows).batch_size(2);
     let plans = operation.plans().expect("valid split batch plans");
 
     assert_eq!(plans.statements().len(), 2);
@@ -465,7 +465,7 @@ fn selected_backend_rejects_invalid_batch_policies() {
     );
     assert_eq!(
         db::from(&posts)
-            .batch_insert(&rows)
+            .insert_many(&rows)
             .batch_size(0)
             .plans()
             .expect_err("zero batch size")
@@ -474,7 +474,7 @@ fn selected_backend_rejects_invalid_batch_policies() {
     );
     assert!(
         db::from(&posts)
-            .batch_insert(&rows)
+            .insert_many(&rows)
             .batch_size(1)
             .single_statement()
             .plans()
@@ -494,7 +494,7 @@ fn selected_backend_rejects_empty_conflict_target() {
         published: true,
     }];
     let error = db::from(&posts)
-        .batch_insert(&rows)
+        .insert_many(&rows)
         .ignore_conflicts_on(Vec::<db::queries::ColumnRef>::new())
         .plan()
         .expect_err("empty targeted conflict policy");
@@ -514,7 +514,7 @@ fn selected_backend_renders_selective_upsert() {
         published: true,
     }];
     let plan = db::from(&posts)
-        .batch_upsert(&rows, &posts.title)
+        .upsert_many(&rows, &posts.title)
         .update_only(&posts.published)
         .plan()
         .expect("valid selective upsert");
@@ -534,7 +534,7 @@ fn selected_backend_renders_targeted_conflict_ignore() {
         published: true,
     }];
     let plan = db::from(&posts)
-        .batch_insert(&rows)
+        .insert_many(&rows)
         .ignore_conflicts_on((&posts.title, &posts.published))
         .plan()
         .expect("valid targeted conflict ignore");
@@ -562,7 +562,7 @@ fn selected_backend_renders_insert_ignore() {
         published: true,
     }];
     let plan = db::from(&posts)
-        .batch_insert(&rows)
+        .insert_many(&rows)
         .ignore_errors()
         .plan()
         .expect("valid INSERT IGNORE");
@@ -591,7 +591,7 @@ fn selected_backend_renders_batch_update() {
         },
     ];
     let plan = db::from(&posts)
-        .batch_update(&rows, (&posts.title, &posts.published))
+        .update_many(&rows, (&posts.title, &posts.published))
         .plan()
         .expect("valid batch update");
 
@@ -631,7 +631,7 @@ fn selected_backend_rejects_duplicate_batch_update_keys() {
         },
     ];
     let error = db::from(&posts)
-        .batch_update(&rows, &posts.title)
+        .update_many(&rows, &posts.title)
         .batch_size(1)
         .plans()
         .expect_err("duplicate model keys");
@@ -657,7 +657,7 @@ async fn selected_backend_stops_before_execution_on_duplicate_keys() {
     ];
     let mut session = MockDbSession::new();
     let error = db::from(&posts)
-        .batch_update(&rows, &posts.title)
+        .update_many(&rows, &posts.title)
         .batch_size(1)
         .exec(&mut session)
         .await
@@ -677,7 +677,7 @@ fn selected_backend_renders_composite_key_batch_update() {
         role: "owner".to_string(),
     }];
     let plan = db::from(&memberships)
-        .batch_update(&rows, &memberships.role)
+        .update_many(&rows, &memberships.role)
         .plan()
         .expect("valid composite-key batch update");
 
@@ -701,7 +701,7 @@ fn selected_backend_composes_returning_filtered_batch_update() {
     let plan = db::from(&posts)
         .filter(posts.published.eq(db::val(false)))
         .returning::<BackendPostSummary>()
-        .batch_update(&rows, &posts.title)
+        .update_many(&rows, &posts.title)
         .plan()
         .expect("valid returning filtered batch update");
 
@@ -728,7 +728,7 @@ fn selected_backend_renders_postgres_unnest() {
         },
     ];
     let plan = db::from(&posts)
-        .batch_insert(&rows)
+        .insert_many(&rows)
         .using_unnest()
         .ignore_conflicts_on(&posts.title)
         .plan()
@@ -753,7 +753,7 @@ fn selected_backend_composes_returning_unnest_upsert() {
     }];
     let plan = db::from(&posts)
         .returning::<BackendPostSummary>()
-        .batch_upsert(&rows, &posts.title)
+        .upsert_many(&rows, &posts.title)
         .using_unnest()
         .update_only(&posts.published)
         .plan()
@@ -800,7 +800,7 @@ async fn selected_backend_chunks_large_batch_execution() {
     });
 
     let affected = db::from(&posts)
-        .batch_insert(&rows)
+        .insert_many(&rows)
         .exec(&mut session)
         .await
         .expect("chunked batch execution");
@@ -823,7 +823,7 @@ fn selected_backend_batch_sizing_reserves_filter_parameters() {
         .collect::<Vec<_>>();
     let plans = db::from(&posts)
         .filter(posts.published.eq(db::val(false)))
-        .batch_update(&rows, (&posts.title, &posts.published))
+        .update_many(&rows, (&posts.title, &posts.published))
         .plans()
         .expect("filter-aware automatic batch sizing");
 

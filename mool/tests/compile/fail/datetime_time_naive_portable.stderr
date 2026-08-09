@@ -6,9 +6,9 @@ error[E0277]: the trait bound `PlainDateTime: SqlTimestamp` is not satisfied
   |
   = help: the following other types implement trait `SqlTimestamp`:
             OffsetDateTime
-            Option<OffsetDateTime>
-            Option<mool::sqlx::types::chrono::DateTime<Utc>>
             mool::sqlx::types::chrono::DateTime<Utc>
+            std::option::Option<OffsetDateTime>
+            std::option::Option<mool::sqlx::types::chrono::DateTime<Utc>>
 note: required by a bound in `trunc_day`
  --> src/datetime/portable.rs
   |

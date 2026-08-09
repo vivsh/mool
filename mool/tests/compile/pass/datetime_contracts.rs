@@ -68,7 +68,7 @@ fn main() {
                 local_at: time::PrimitiveDateTime::MIN,
             }];
             let _ = db::from(&events)
-                .batch_insert(&rows)
+                .insert_many(&rows)
                 .using_unnest()
                 .plan();
         }

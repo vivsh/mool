@@ -173,7 +173,7 @@ db::from(&posts)
     .await?;
 ```
 
-The same builder handles `insert`, `batch_insert`, `update`, `delete`,
+The same builder handles `insert`, `insert_many`, `update`, `delete`,
 `upsert`, `returning`, `count`, `exists`, `scalar`, and paginated reads.
 Plans can be inspected without a database:
 
@@ -208,19 +208,19 @@ lower that limit, while `single_statement()` rejects input that cannot fit.
 
 ```rust
 db::from(&posts)
-    .batch_insert(&new_posts)
+    .insert_many(&new_posts)
     .batch_size(1_000)
     .exec(&mut pool)
     .await?;
 
 db::from(&posts)
-    .batch_upsert(&new_posts, (&posts.author_id, &posts.title))
+    .upsert_many(&new_posts, (&posts.author_id, &posts.title))
     .update_only(&posts.published)
     .exec(&mut pool)
     .await?;
 
 db::from(&posts)
-    .batch_update(&changed_posts, (&posts.title, &posts.published))
+    .update_many(&changed_posts, (&posts.title, &posts.published))
     .exec(&mut pool)
     .await?;
 ```
@@ -245,7 +245,7 @@ use mool::backend::PostgresUnnestExt;
 
 let inserted = db::from(&posts)
     .returning::<Post>()
-    .batch_insert(&new_posts)
+    .insert_many(&new_posts)
     .using_unnest()
     .exec(&mut pool)
     .await?;

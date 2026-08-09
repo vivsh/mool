@@ -54,7 +54,7 @@ pub enum TestDatabaseError {
         target: String,
         /// Structured migration runner failure.
         #[source]
-        source: crate::migrations::engine::MigrationCommandError,
+        source: Box<crate::migrations::engine::MigrationCommandError>,
     },
     /// The isolated target could not be removed.
     #[error("cannot remove test database {target}: {source}")]

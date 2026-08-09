@@ -222,13 +222,13 @@ fn write_golden_queries_cover_mutations_upserts_and_returning() {
         BindMeta::new(0, 1, 1),
     );
     assert_plan(
-        &db::from(&post).batch_insert(&rows).plan().unwrap(),
+        &db::from(&post).insert_many(&rows).plan().unwrap(),
         "INSERT INTO posts (title, published) VALUES ($1, $2), ($3, $4)",
         BindMeta::new(4, 0, 4),
     );
     assert_plan(
         &db::from(&post)
-            .batch_upsert(&rows, [&post.title])
+            .upsert_many(&rows, [&post.title])
             .plan()
             .unwrap(),
         "INSERT INTO posts (title, published) VALUES ($1, $2), ($3, $4) ON CONFLICT (title) DO UPDATE SET published = EXCLUDED.published",
@@ -490,7 +490,7 @@ fn postgres_unnest_supports_generated_complex_column_arrays() {
         priority: PostPriority::High,
     }];
     let enum_plan = db::from(&enum_posts)
-        .batch_insert(&enum_rows)
+        .insert_many(&enum_rows)
         .using_unnest()
         .plan()
         .unwrap();
@@ -507,7 +507,7 @@ fn postgres_unnest_supports_generated_complex_column_arrays() {
     }];
     assert_eq!(
         db::from(&native_posts)
-            .batch_insert(&native_rows)
+            .insert_many(&native_rows)
             .using_unnest()
             .plan()
             .unwrap()
@@ -524,7 +524,7 @@ fn postgres_unnest_supports_generated_complex_column_arrays() {
     }];
     assert_eq!(
         db::from(&json_posts)
-            .batch_insert(&json_rows)
+            .insert_many(&json_rows)
             .using_unnest()
             .plan()
             .unwrap()
@@ -631,7 +631,7 @@ fn failure_contracts_reject_invalid_queries_before_execution() {
 
     let empty_rows: Vec<PostPatch> = Vec::new();
     assert_unsupported(
-        db::from(&post).batch_insert(&empty_rows).plan(),
+        db::from(&post).insert_many(&empty_rows).plan(),
         "batch insert requires at least one row",
     );
 

@@ -102,7 +102,7 @@ impl QueryScope {
     }
 
     /// Builds an executable that inserts multiple records.
-    pub fn batch_insert<T>(self, rows: &[T]) -> BatchInsert<'_, T>
+    pub fn insert_many<T>(self, rows: &[T]) -> BatchInsert<'_, T>
     where
         T: Record,
     {
@@ -115,7 +115,7 @@ impl QueryScope {
     }
 
     /// Builds an executable that upserts multiple records.
-    pub fn batch_upsert<T, C>(self, rows: &[T], conflict: C) -> BatchUpsert<'_, T>
+    pub fn upsert_many<T, C>(self, rows: &[T], conflict: C) -> BatchUpsert<'_, T>
     where
         T: Record,
         C: ColumnSet,
@@ -131,7 +131,7 @@ impl QueryScope {
     }
 
     /// Builds an executable that updates multiple models by primary key.
-    pub fn batch_update<T, C>(self, rows: &[T], columns: C) -> BatchUpdate<'_, T>
+    pub fn update_many<T, C>(self, rows: &[T], columns: C) -> BatchUpdate<'_, T>
     where
         T: Model,
         C: ColumnSet,
@@ -177,7 +177,7 @@ where
     }
 
     /// Builds a returning batch insert executable.
-    pub fn batch_insert<T>(self, rows: &[T]) -> ReturningBatchInsert<'_, R, T>
+    pub fn insert_many<T>(self, rows: &[T]) -> ReturningBatchInsert<'_, R, T>
     where
         T: Record,
     {
@@ -190,7 +190,7 @@ where
     }
 
     /// Builds a returning batch upsert executable.
-    pub fn batch_upsert<T, C>(self, rows: &[T], conflict: C) -> ReturningBatchUpsert<'_, R, T>
+    pub fn upsert_many<T, C>(self, rows: &[T], conflict: C) -> ReturningBatchUpsert<'_, R, T>
     where
         T: Record,
         C: ColumnSet,
@@ -206,7 +206,7 @@ where
     }
 
     /// Builds a returning multi-row update executable.
-    pub fn batch_update<T, C>(self, rows: &[T], columns: C) -> ReturningBatchUpdate<'_, R, T>
+    pub fn update_many<T, C>(self, rows: &[T], columns: C) -> ReturningBatchUpdate<'_, R, T>
     where
         T: Model,
         C: ColumnSet,
