@@ -1,7 +1,7 @@
 //! Portable aggregate SQL functions.
 
 use super::super::expr::{Expr, IntoExpr};
-use super::super::extension::func;
+use super::super::extension::{func, func_star};
 use super::common::WindowFn;
 
 /// Creates a typed COUNT(...) expression.
@@ -11,7 +11,7 @@ pub fn count<T>(expr: impl IntoExpr<T>) -> Expr<i64> {
 
 /// Creates a typed COUNT(*) expression.
 pub fn count_all() -> Expr<i64> {
-    func(WindowFn::new("COUNT", true, 0, 0), ())
+    func_star(WindowFn::new("COUNT", true, 0, 0))
 }
 
 /// Creates a typed SUM(...) expression.

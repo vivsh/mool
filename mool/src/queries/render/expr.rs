@@ -65,14 +65,22 @@ impl Renderer {
                 op,
                 self.render_expr(right, mode)?
             )),
-            ExprNode::Function { function, args } => {
+            ExprNode::Function {
+                function,
+                args,
+                args_syntax,
+            } => {
                 function.validate(self.dialect, args.len())?;
                 let name = function.name(self.dialect)?;
-                let rendered = args
-                    .iter()
-                    .map(|arg| self.render_expr(arg, mode))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(format!("{name}({})", rendered.join(", ")))
+                let rendered = match args_syntax {
+                    super::super::expr::FunctionArgSyntax::Expressions => args
+                        .iter()
+                        .map(|arg| self.render_expr(arg, mode))
+                        .collect::<Result<Vec<_>, _>>()?
+                        .join(", "),
+                    super::super::expr::FunctionArgSyntax::Star => "*".to_string(),
+                };
+                Ok(format!("{name}({rendered})"))
             }
             ExprNode::Custom { expression, args } => {
                 self.render_custom_expression(expression, args, mode)

@@ -61,6 +61,7 @@ pub(super) enum ExprNode {
     Function {
         function: Arc<dyn FunctionSpec>,
         args: Vec<ExprNode>,
+        args_syntax: FunctionArgSyntax,
     },
     Custom {
         expression: Arc<dyn CustomExpressionSpec>,
@@ -99,6 +100,13 @@ pub(super) enum ExprNode {
         predicate: Option<Box<ExprNode>>,
         negated: bool,
     },
+}
+
+/// SQL syntax used for a function call's argument list.
+#[derive(Clone, Copy)]
+pub(super) enum FunctionArgSyntax {
+    Expressions,
+    Star,
 }
 
 /// Type-erased column identity for advanced dynamic column collections.

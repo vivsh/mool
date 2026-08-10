@@ -38,6 +38,14 @@ struct BackendPostPatch {
     published: bool,
 }
 
+#[derive(Debug, Clone, db::Record)]
+#[table(name = "backend_posts")]
+struct BackendAggregateProjection {
+    count_all: i64,
+    count_id: i64,
+    row_number: i64,
+}
+
 #[derive(Clone, Copy)]
 enum BackendOrdering {
     TitleThenId,
@@ -164,6 +172,26 @@ fn selected_backend_renders_typed_variables() {
     assert_eq!(parameter.occurrences, vec![1, 1]);
     #[cfg(any(feature = "sqlite", feature = "mysql", feature = "mariadb"))]
     assert_eq!(parameter.occurrences, vec![1, 2]);
+}
+
+/// Verifies aggregate star syntax and ordinary zero-argument functions render distinctly.
+#[test]
+fn selected_backend_renders_aggregate_argument_syntax() {
+    let posts = BackendPost::table();
+    let out = db::out::<BackendAggregateProjection>();
+    let window = db::funcs::window().order_by(posts.id.asc());
+    let plan = db::from(&posts)
+        .all::<BackendAggregateProjection>()
+        .set(&out.count_all, db::funcs::count_all())
+        .set(&out.count_id, db::funcs::count(posts.id.clone()))
+        .set(&out.row_number, db::funcs::row_number().over(window))
+        .plan()
+        .expect("valid aggregate projection");
+
+    assert_eq!(
+        plan.sql,
+        "SELECT COUNT(*) AS count_all, COUNT(backend_posts.id) AS count_id, ROW_NUMBER() OVER (ORDER BY backend_posts.id ASC) AS row_number FROM backend_posts"
+    );
 }
 
 /// Verifies repeated custom-expression children follow backend placeholder semantics.

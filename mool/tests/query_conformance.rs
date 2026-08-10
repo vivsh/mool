@@ -110,6 +110,26 @@ fn read_terminal_golden_queries_cover_limits_aggregates_and_windows() {
     );
 }
 
+/// Verifies a typed projected `count_all()` expression renders SQL `COUNT(*)`.
+#[test]
+fn projected_count_all_renders_star() {
+    let post = Post::table();
+    let out = db::out::<PostStats>();
+    let plan = db::from(&post)
+        .all::<PostStats>()
+        .set(&out.author_id, post.author_id.clone())
+        .set(&out.post_count, db::funcs::count_all())
+        .set(&out.avg_id, db::funcs::avg(post.id.clone()))
+        .plan()
+        .expect("typed count_all projection");
+
+    assert!(
+        plan.sql.contains("COUNT(*)"),
+        "count_all must render COUNT(*), got: {}",
+        plan.sql
+    );
+}
+
 /// Verifies grouped aggregate terminals preserve grouping semantics in their inner query.
 #[test]
 fn grouped_terminals_preserve_group_by_and_having() {

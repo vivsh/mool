@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::SqlDialect;
 
 use super::dialect;
-use super::expr::{Expr, ExprNode};
+use super::expr::{Expr, ExprNode, FunctionArgSyntax};
 use super::handles::{Column, Var};
 use super::source::ProjectedColumn;
 use crate::QueryError;
@@ -130,6 +130,23 @@ where
             _marker: PhantomData,
         }),
         args: args.nodes,
+        args_syntax: FunctionArgSyntax::Expressions,
+    })
+}
+
+/// Creates a typed function expression whose SQL argument is `*`.
+pub(super) fn func_star<T, F>(function: F) -> Expr<T>
+where
+    T: 'static,
+    F: DbFunction<T>,
+{
+    Expr::new(ExprNode::Function {
+        function: Arc::new(FunctionAdapter::<T, F> {
+            function,
+            _marker: PhantomData,
+        }),
+        args: Vec::new(),
+        args_syntax: FunctionArgSyntax::Star,
     })
 }
 
