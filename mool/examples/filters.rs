@@ -20,20 +20,10 @@ struct PostFilter {
     ids: Vec<i64>,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum PostOrdering {
+#[derive(Debug, Clone, db::SortKey)]
+#[sort(model = Post)]
+enum PostSort {
     Title,
-}
-
-impl db::Sortable for PostOrdering {
-    type Model = Post;
-
-    fn apply_sort(&self, sort: db::SortBuilder<Self::Model>) -> db::SortBuilder<Self::Model> {
-        let order = match self {
-            Self::Title => sort.title.asc(),
-        };
-        sort.sort(order)
-    }
 }
 
 fn main() -> Result<(), db::QueryError> {
@@ -43,9 +33,11 @@ fn main() -> Result<(), db::QueryError> {
         q: Some("%mool%".to_string()),
         ids: vec![1, 2],
     };
+    let sort = db::Sort::<PostSort>::parse("-title")
+        .map_err(|error| db::QueryError::BindError(error.to_string()))?;
     let plan = db::from(&posts)
         .filter_with(&filter)
-        .sort_with(&PostOrdering::Title)
+        .sort_with(&sort)
         .all::<Post>()
         .plan()?;
 

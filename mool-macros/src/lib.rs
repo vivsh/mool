@@ -36,6 +36,11 @@ pub fn derive_filterable(input: TokenStream) -> TokenStream {
     mool_macros_impl::filterable::derive_filterable(input.into(), runtime_path()).into()
 }
 
+#[proc_macro_derive(SortKey, attributes(sort, db))]
+pub fn derive_sort_key(input: TokenStream) -> TokenStream {
+    mool_macros_impl::sort_key::derive_sort_key(input.into(), runtime_path()).into()
+}
+
 #[proc_macro_derive(SqlEnum, attributes(sql_enum, db))]
 pub fn derive_sql_enum(input: TokenStream) -> TokenStream {
     mool_macros_impl::sql_enum::derive_sql_enum(input.into(), runtime_path()).into()

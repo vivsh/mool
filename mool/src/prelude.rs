@@ -11,7 +11,8 @@ pub use crate::{
     Backref, DbConf, DbError, DbPool, DbSession, FilterBuilder, Filterable, JoinColumn,
     JoinRelation, JoinType, ManyBackref, ManyToMany, Model, ModelSchema, OneBackref, Page,
     Pageable, Pagination, PaginationBuilder, PrefetchKey, QueryError, ReceivesPrefetch, Record,
-    RecordSchema, SortBuilder, Sortable, SqlEnum, Statement, backref, from, many_to_many, meta,
+    RecordSchema, Sort, SortBuilder, SortDirection, SortKey, SortParseError, Sortable, SqlEnum,
+    Statement, backref, from, many_to_many, meta,
     out, prefetch, query, random_order, val, var,
 };
 #[cfg(not(mool_has_backend))]

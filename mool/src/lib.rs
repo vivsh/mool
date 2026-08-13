@@ -75,7 +75,7 @@ pub use interfaces::{BatchRecord, Model, ModelSchema, Record, RecordSchema};
 pub use managed_rows::{ManagedRecord, ManagedRecordError};
 #[cfg(feature = "migrations")]
 pub use migrations::EmbeddedMigrations;
-pub use mool_macros::{Filterable, ManagedRecord, Model, Record, SqlEnum};
+pub use mool_macros::{Filterable, ManagedRecord, Model, Record, SortKey, SqlEnum};
 #[cfg(mool_has_backend)]
 pub use pagination::{Page, Pageable, Pagination, PaginationBuilder};
 #[cfg(mool_has_backend)]
@@ -95,7 +95,7 @@ pub use relations::{
     Prefetch, PrefetchKey, ReceivesPrefetch, ReferenceMeta, RelationCardinality, prefetch,
 };
 #[cfg(mool_has_backend)]
-pub use sorting::{SortBuilder, Sortable, random_order};
+pub use sorting::{Sort, SortBuilder, SortDirection, SortKey, SortParseError, Sortable, random_order};
 #[cfg(mool_has_backend)]
 pub use statement::Statement;
 

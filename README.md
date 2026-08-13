@@ -282,6 +282,27 @@ typed. `Sortable` and `Pageable` follow the same builder-transform shape as
 `Filterable`:
 
 ```rust
+#[derive(db::SortKey)]
+#[sort(model = Post, max_terms = 2)]
+enum PostSort {
+    Title,
+    #[sort(name = "newest", by = published_at)]
+    Newest,
+}
+
+let sort = db::Sort::<PostSort>::parse("-newest,title")?;
+let query = db::from(&Post::table()).sort_with(&sort);
+```
+
+`Sort` accepts one comma-separated request value. A leading `-` makes a key
+descending, request order is preserved, and unknown, duplicate, malformed, or
+over-limit keys are rejected. `Sort<K>` deserializes as a scalar, so an
+endpoint-owned DTO can use `Option<Sort<PostSort>>` alongside filters and
+pagination. `#[sort(model = ...)]` is required because only models own query
+sources; records remain row/projection shapes and cannot be used in `FROM`.
+The default cap is one term; set `max_terms` explicitly for multi-key sorting.
+
+```rust
 enum PostOrdering {
     Newest,
     Title,

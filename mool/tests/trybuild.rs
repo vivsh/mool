@@ -5,6 +5,8 @@ fn public_macro_contracts_compile_as_documented() {
     let tests = trybuild::TestCases::new();
     #[cfg(feature = "postgres")]
     tests.pass("tests/compile/pass/public_api.rs");
+    #[cfg(feature = "postgres")]
+    tests.pass("tests/compile/pass/sort_key.rs");
     tests.pass("tests/compile/pass/sqlx_compat.rs");
     tests.pass("tests/compile/pass/datetime_contracts.rs");
     tests.pass("tests/compile/pass/mock_available_debug.rs");
