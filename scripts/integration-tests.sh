@@ -111,7 +111,7 @@ run_cargo_suite() {
 
   cargo test --locked -p mool --no-default-features --features "${features}" \
     --test sqlx_smoke --test sqlx_transactions --test batch_writes_sqlx \
-    --test datetime_sqlx --test test_database -- --ignored
+    --test datetime_sqlx --test many_to_many_mutations_sqlx --test test_database -- --ignored
 }
 
 main() {

@@ -98,6 +98,58 @@ struct BackendMembership {
     role: String,
 }
 
+#[derive(Debug, Clone, db::Model)]
+#[table(name = "backend_tags")]
+struct BackendTag {
+    id: i64,
+}
+
+#[derive(Debug, Clone, db::Model)]
+#[table(
+    name = "backend_post_tags",
+    primary_key(columns = ["post_id", "tag_id"])
+)]
+struct BackendPostTag {
+    post_id: i64,
+    tag_id: i64,
+}
+
+struct BackendPostTags;
+
+impl db::ManyToMany for BackendPostTags {
+    type From = BackendPost;
+    type Through = BackendPostTag;
+    type To = BackendTag;
+
+    const NAME: &'static str = "tags";
+
+    fn from_through() -> db::ReferenceMeta {
+        db::ReferenceMeta {
+            logical_name: "post_tag",
+            table_name: "backend_post_tags",
+            table_schema: None,
+            columns: &[db::JoinColumn {
+                from: "backend_posts.id",
+                to: "post_id",
+            }],
+            join_type: db::JoinType::Inner,
+        }
+    }
+
+    fn through_to() -> db::ReferenceMeta {
+        db::ReferenceMeta {
+            logical_name: "tag",
+            table_name: "backend_tags",
+            table_schema: None,
+            columns: &[db::JoinColumn {
+                from: "tag_id",
+                to: "id",
+            }],
+            join_type: db::JoinType::Inner,
+        }
+    }
+}
+
 #[derive(Clone)]
 struct RepeatedArgument {
     value: db::Expr<i64>,
@@ -148,6 +200,21 @@ const CAST_SQL: &str = "SELECT CAST((backend_posts.id + ?) AS REAL) FROM backend
 #[cfg(any(feature = "mysql", feature = "mariadb"))]
 const CAST_SQL: &str = "SELECT CAST((backend_posts.id + ?) AS DOUBLE) FROM backend_posts LIMIT 1";
 
+#[cfg(feature = "postgres")]
+const MANY_TO_MANY_UPDATE_SQL: &str = "UPDATE backend_posts SET title = $1, published = $2 WHERE (id = $3) AND EXISTS (SELECT 1 FROM backend_post_tags post_tag JOIN backend_tags tag ON tag.id = post_tag.tag_id WHERE post_tag.post_id = backend_posts.id AND (tag.id = $4))";
+#[cfg(any(feature = "sqlite", feature = "mysql", feature = "mariadb"))]
+const MANY_TO_MANY_UPDATE_SQL: &str = "UPDATE backend_posts SET title = ?, published = ? WHERE (id = ?) AND EXISTS (SELECT 1 FROM backend_post_tags post_tag JOIN backend_tags tag ON tag.id = post_tag.tag_id WHERE post_tag.post_id = backend_posts.id AND (tag.id = ?))";
+
+#[cfg(feature = "postgres")]
+const MANY_TO_MANY_DELETE_SQL: &str = "DELETE FROM backend_posts WHERE (id = $1) AND EXISTS (SELECT 1 FROM backend_post_tags post_tag JOIN backend_tags tag ON tag.id = post_tag.tag_id WHERE post_tag.post_id = backend_posts.id AND (tag.id = $2))";
+#[cfg(any(feature = "sqlite", feature = "mysql", feature = "mariadb"))]
+const MANY_TO_MANY_DELETE_SQL: &str = "DELETE FROM backend_posts WHERE (id = ?) AND EXISTS (SELECT 1 FROM backend_post_tags post_tag JOIN backend_tags tag ON tag.id = post_tag.tag_id WHERE post_tag.post_id = backend_posts.id AND (tag.id = ?))";
+
+#[cfg(feature = "postgres")]
+const MANY_TO_MANY_NONE_DELETE_SQL: &str = "DELETE FROM backend_posts WHERE (id = $1) AND NOT EXISTS (SELECT 1 FROM backend_post_tags post_tag JOIN backend_tags tag ON tag.id = post_tag.tag_id WHERE post_tag.post_id = backend_posts.id)";
+#[cfg(any(feature = "sqlite", feature = "mysql", feature = "mariadb"))]
+const MANY_TO_MANY_NONE_DELETE_SQL: &str = "DELETE FROM backend_posts WHERE (id = ?) AND NOT EXISTS (SELECT 1 FROM backend_post_tags post_tag JOIN backend_tags tag ON tag.id = post_tag.tag_id WHERE post_tag.post_id = backend_posts.id)";
+
 #[cfg(any(feature = "postgres", feature = "sqlite"))]
 const RANDOM_ORDER_SQL: &str = "SELECT backend_posts.id, backend_posts.title, backend_posts.published FROM backend_posts ORDER BY RANDOM() ASC";
 #[cfg(any(feature = "mysql", feature = "mariadb"))]
@@ -192,6 +259,46 @@ fn selected_backend_renders_aggregate_argument_syntax() {
         plan.sql,
         "SELECT COUNT(*) AS count_all, COUNT(backend_posts.id) AS count_id, ROW_NUMBER() OVER (ORDER BY backend_posts.id ASC) AS row_number FROM backend_posts"
     );
+}
+
+/// Verifies many-to-many authorization predicates render as correlated update and delete filters.
+#[test]
+fn selected_backend_renders_many_to_many_mutation_predicates() {
+    let posts = BackendPost::table();
+    let patch = BackendPostPatch {
+        title: "resolved".to_string(),
+        published: true,
+    };
+    let matching_tag =
+        || db::many_to_many::<BackendPostTags>(&posts).any(|tag| tag.id.eq(db::val(9_i64)));
+
+    let update = db::from(&posts)
+        .filter(posts.id.eq(db::val(7_i64)))
+        .filter(matching_tag())
+        .update(&patch)
+        .plan()
+        .expect("many-to-many update plan");
+    assert_eq!(update.sql, MANY_TO_MANY_UPDATE_SQL);
+    assert_eq!(update.prebound_count, 2);
+    assert_eq!(update.dynamic_bind_count, 2);
+
+    let delete = db::from(&posts)
+        .filter(posts.id.eq(db::val(7_i64)))
+        .filter(matching_tag())
+        .delete()
+        .plan()
+        .expect("many-to-many delete plan");
+    assert_eq!(delete.sql, MANY_TO_MANY_DELETE_SQL);
+    assert_eq!(delete.prebound_count, 0);
+    assert_eq!(delete.dynamic_bind_count, 2);
+
+    let none = db::from(&posts)
+        .filter(posts.id.eq(db::val(7_i64)))
+        .filter(db::many_to_many::<BackendPostTags>(&posts).none())
+        .delete()
+        .plan()
+        .expect("many-to-many negated delete plan");
+    assert_eq!(none.sql, MANY_TO_MANY_NONE_DELETE_SQL);
 }
 
 /// Verifies repeated custom-expression children follow backend placeholder semantics.

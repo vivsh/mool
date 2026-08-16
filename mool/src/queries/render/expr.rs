@@ -10,8 +10,8 @@ use super::super::extension::ExprRenderCtx;
 use super::super::handles::{ColumnOwner, Table};
 use super::super::source::Source;
 use super::super::validate::{
-    is_model_root, source_alias, validate_identifier, validate_reference, validate_source_identity,
-    validate_table_source,
+    is_model_root, source_alias, source_table, validate_identifier, validate_reference,
+    validate_source_identity, validate_table_source,
 };
 use super::{RenderMode, Renderer, SelectModel};
 use crate::QueryError;
@@ -259,7 +259,7 @@ impl Renderer {
         sql.push(' ');
         sql.push_str(alias);
         sql.push_str(" WHERE ");
-        self.render_relation_on(reference, parent, alias, &mut sql)?;
+        self.render_relation_on(reference, RenderMode::Select(parent), alias, &mut sql)?;
         if let Some(predicate) = predicate {
             let child = relation_child_model(target, alias)?;
             sql.push_str(" AND ");
@@ -274,11 +274,6 @@ impl Renderer {
         exists: ManyToManyExists<'_>,
         mode: RenderMode<'_>,
     ) -> Result<String, QueryError> {
-        let RenderMode::Select(parent) = mode else {
-            return Err(QueryError::BindError(
-                "many-to-many predicates are only supported in read queries".to_string(),
-            ));
-        };
         let ManyToManyExists {
             from_through,
             through_to,
@@ -295,7 +290,7 @@ impl Renderer {
             many_to_many_head(self, through, target, through_alias, target_alias, negated)?;
         self.render_through_join(through_to, through_alias, target_alias, &mut sql);
         sql.push_str(" WHERE ");
-        self.render_relation_on(from_through, parent, through_alias, &mut sql)?;
+        self.render_relation_on(from_through, mode, through_alias, &mut sql)?;
         if let Some(predicate) = predicate {
             let child = relation_child_model(target, target_alias)?;
             sql.push_str(" AND ");
@@ -352,7 +347,7 @@ impl Renderer {
             self.render_table_name(target)?,
             alias
         );
-        self.render_relation_on(reference, parent, alias, &mut sql)?;
+        self.render_relation_on(reference, RenderMode::Select(parent), alias, &mut sql)?;
         sql.push(')');
         Ok(sql)
     }
@@ -360,7 +355,7 @@ impl Renderer {
     fn render_relation_on(
         &self,
         reference: &crate::ReferenceMeta,
-        parent: &SelectModel,
+        parent: RenderMode<'_>,
         alias: &str,
         sql: &mut String,
     ) -> Result<(), QueryError> {
@@ -372,9 +367,37 @@ impl Renderer {
             sql.push('.');
             sql.push_str(column.to);
             sql.push_str(" = ");
-            sql.push_str(&self.resolve_model_column(column.from, parent)?);
+            sql.push_str(&self.render_relation_parent_column(column.from, parent)?);
         }
         Ok(())
+    }
+
+    /// Renders a validated parent relation column for read or mutation correlation.
+    fn render_relation_parent_column(
+        &self,
+        column: &str,
+        mode: RenderMode<'_>,
+    ) -> Result<String, QueryError> {
+        match mode {
+            RenderMode::Select(model) => self.resolve_model_column(column, model),
+            RenderMode::MutationRoot { source } => {
+                let table = source_table(source)?;
+                let root = table.data.name.as_ref();
+                validate_identifier(root)?;
+                let name = match column.split_once('.') {
+                    Some((owner, name)) => {
+                        validate_identifier(owner)?;
+                        if owner != root {
+                            return Err(QueryError::UnknownAlias(owner.to_owned()));
+                        }
+                        name
+                    }
+                    None => column,
+                };
+                validate_identifier(name)?;
+                Ok(format!("{root}.{name}"))
+            }
+        }
     }
 
     fn render_binary(

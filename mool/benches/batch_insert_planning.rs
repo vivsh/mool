@@ -64,12 +64,12 @@ fn benchmark(count: usize) -> Result<(), db::QueryError> {
             .all::<BenchmarkRow>()
             .plan()
     })?;
-    let values = measure(iterations, || db::from(&table).batch_insert(&rows).plan())?;
+    let values = measure(iterations, || db::from(&table).insert_many(&rows).plan())?;
     let json_values = measure(iterations, || {
-        db::from(&json_table).batch_insert(&json_rows).plan()
+        db::from(&json_table).insert_many(&json_rows).plan()
     })?;
     let unnest = measure(iterations, || {
-        db::from(&table).batch_insert(&rows).using_unnest().plan()
+        db::from(&table).insert_many(&rows).using_unnest().plan()
     })?;
     println!(
         "rows={count} iterations={iterations} query={query:?} values={values:?} json_values={json_values:?} unnest={unnest:?}"

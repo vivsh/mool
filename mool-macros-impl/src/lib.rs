@@ -7,9 +7,9 @@ pub mod embed_migrations;
 pub mod filterable;
 pub mod model;
 pub mod record;
-pub mod sort_key;
 mod record_types;
 mod schemable;
+pub mod sort_key;
 pub mod sql_enum;
 mod typed_handles;
 

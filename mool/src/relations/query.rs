@@ -148,7 +148,7 @@ where
     R::Through: HasCols,
     R::To: HasCols,
 {
-    /// Matches parent rows with at least one related row satisfying `f`.
+    /// Matches parent rows in read, update, or delete filters with at least one related row satisfying `f`.
     pub fn any<F>(self, f: F) -> Predicate
     where
         F: FnOnce(&ModelTable<R::To>) -> Predicate,
@@ -165,7 +165,7 @@ where
         )
     }
 
-    /// Matches parent rows with no related rows.
+    /// Matches parent rows in read, update, or delete filters with no related rows.
     pub fn none(self) -> Predicate {
         let target = R::To::table();
         let through = R::Through::table();

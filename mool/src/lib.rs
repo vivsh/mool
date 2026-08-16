@@ -95,7 +95,9 @@ pub use relations::{
     Prefetch, PrefetchKey, ReceivesPrefetch, ReferenceMeta, RelationCardinality, prefetch,
 };
 #[cfg(mool_has_backend)]
-pub use sorting::{Sort, SortBuilder, SortDirection, SortKey, SortParseError, Sortable, random_order};
+pub use sorting::{
+    Sort, SortBuilder, SortDirection, SortKey, SortParseError, Sortable, random_order,
+};
 #[cfg(mool_has_backend)]
 pub use statement::Statement;
 

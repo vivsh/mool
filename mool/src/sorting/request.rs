@@ -94,7 +94,10 @@ impl<K: SortKey> Sort<K> {
         let mut terms = Vec::with_capacity(count);
         for (index, term) in value.split(',').enumerate() {
             let parsed = parse_term::<K>(term, index + 1)?;
-            if terms.iter().any(|existing: &SortTerm<K>| existing.key.key() == parsed.key.key()) {
+            if terms
+                .iter()
+                .any(|existing: &SortTerm<K>| existing.key.key() == parsed.key.key())
+            {
                 return Err(SortParseError::DuplicateKey {
                     key: parsed.key.key().to_owned(),
                 });

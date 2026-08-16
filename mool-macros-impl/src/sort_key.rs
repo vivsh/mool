@@ -150,17 +150,27 @@ fn unit_variants(
 ) -> Result<&syn::punctuated::Punctuated<Variant, syn::Token![,]>, Error> {
     match &input.data {
         Data::Enum(data) => Ok(&data.variants),
-        _ => Err(Error::new_spanned(&input.ident, "SortKey supports enums only")),
+        _ => Err(Error::new_spanned(
+            &input.ident,
+            "SortKey supports enums only",
+        )),
     }
 }
 
 fn parse_variant(variant: &Variant) -> Result<Mapping, Error> {
     if !matches!(variant.fields, syn::Fields::Unit) {
-        return Err(Error::new_spanned(variant, "SortKey variants must be unit variants"));
+        return Err(Error::new_spanned(
+            variant,
+            "SortKey variants must be unit variants",
+        ));
     }
     let mut name = None;
     let mut column = None;
-    for attr in variant.attrs.iter().filter(|attr| attr.path().is_ident("sort")) {
+    for attr in variant
+        .attrs
+        .iter()
+        .filter(|attr| attr.path().is_ident("sort"))
+    {
         attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("name") {
                 if name.is_some() {
@@ -189,15 +199,24 @@ fn parse_variant(variant: &Variant) -> Result<Mapping, Error> {
 
 fn validate_mappings(mappings: &[Mapping]) -> Result<(), Error> {
     if mappings.is_empty() {
-        return Err(Error::new(proc_macro2::Span::call_site(), "SortKey requires at least one variant"));
+        return Err(Error::new(
+            proc_macro2::Span::call_site(),
+            "SortKey requires at least one variant",
+        ));
     }
     let mut names = HashSet::new();
     for mapping in mappings {
         if !valid_name(&mapping.name) {
-            return Err(Error::new(mapping.variant.span(), "sort key names must be lowercase ASCII snake case"));
+            return Err(Error::new(
+                mapping.variant.span(),
+                "sort key names must be lowercase ASCII snake case",
+            ));
         }
         if !names.insert(&mapping.name) {
-            return Err(Error::new(mapping.variant.span(), "sort key names must be unique"));
+            return Err(Error::new(
+                mapping.variant.span(),
+                "sort key names must be unique",
+            ));
         }
     }
     Ok(())
