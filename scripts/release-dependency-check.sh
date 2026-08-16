@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-if rg -q '^gaman = \{.*path\s*=' Cargo.toml; then
+if grep -Eq '^gaman = \{.*path[[:space:]]*=' Cargo.toml; then
     echo "release builds must resolve Gaman from crates.io, not a sibling path" >&2
     exit 1
 fi
