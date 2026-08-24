@@ -473,9 +473,9 @@ dependencies = [
 
 [[package]]
 name = "gaman"
-version = "0.3.35"
+version = "0.3.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31ac03367d329426c8b2976efcdb3375d6b0c6babeaf89aba2cdf801db763df3"
+checksum = "1cf1e67061cc07cd12451e88d1f7d4c1aee70f6cd854433b08ec68dc0f29a768"
 dependencies = [
  "gaman-core",
  "serde",
@@ -888,7 +888,7 @@ dependencies = [
 
 [[package]]
 name = "mool"
-version = "0.2.11"
+version = "0.2.12"
 dependencies = [
  "chrono",
  "gaman",
