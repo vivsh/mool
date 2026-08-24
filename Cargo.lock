@@ -488,9 +488,9 @@ dependencies = [
 
 [[package]]
 name = "gaman-core"
-version = "0.3.35"
+version = "0.3.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dee5047dc432aac5982779a7f3b381c49c302ae67432ed76a136d5da56a547e9"
+checksum = "200fdaedcc9e5a23895bf92d4b80af35a9594ee5522b36dc563d73f0ab448a3d"
 dependencies = [
  "chrono",
  "serde",

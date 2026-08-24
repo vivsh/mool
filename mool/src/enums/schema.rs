@@ -64,6 +64,14 @@ impl SchemaBuilder {
         }
     }
 
+    /// Applies a reusable schema contribution to this builder.
+    ///
+    /// The contribution receives the current builder and returns it after
+    /// registering its models and other schema metadata.
+    pub fn extend(self, configure: impl FnOnce(Self) -> Self) -> Self {
+        configure(self)
+    }
+
     /// Adds a table from any Gaman-compatible table type.
     pub fn table<T>(mut self) -> Self
     where
