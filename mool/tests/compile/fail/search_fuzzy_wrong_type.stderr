@@ -1,0 +1,5 @@
+error: fuzzy search requires a non-null String column
+ --> tests/compile/fail/search_fuzzy_wrong_type.rs:8:5
+  |
+8 |     title: Option<String>,
+  |     ^^^^^

@@ -7,6 +7,8 @@ Changelog structure and Rust semantic-versioning conventions.
 
 ### Changed
 
+- Register advanced search indexes as top-level Gaman opaque declarations while
+  keeping model tables limited to modeled columns, constraints, and indexes.
 - Rename the multi-row write terminals from `batch_insert`, `batch_upsert`,
   and `batch_update` to `insert_many`, `upsert_many`, and `update_many`.
   `batch_size()` remains the statement-chunking control.
@@ -37,6 +39,12 @@ Changelog structure and Rust semantic-versioning conventions.
 
 ### Added
 
+- Feature-gated named full-text search, PostgreSQL trigram fuzzy matching, and
+  dynamically sized vector similarity with type-inferred table metadata,
+  optional dimension/index configuration, ordinary typed expressions, natural
+  dialect indexes, and structured planning failures.
+- PostgreSQL `pg_trgm` and `vector` extension registration with dependency-safe
+  schema ordering, plus MySQL-family `FULLTEXT` and MariaDB vector DDL metadata.
 - Distinct MariaDB rendering and capability exports.
 - Structured database errors with operation context and SQLx sources.
 - Savepoint-backed nested transactions.

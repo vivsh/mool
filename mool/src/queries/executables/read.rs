@@ -7,6 +7,7 @@ use crate::placeholders::Dialect;
 
 use super::super::binds::statement_from_plan;
 use super::super::expr::IntoExpr;
+use super::super::handles::Var;
 use super::super::output::{HasOutputCols, IntoOutputTarget, select_assignment};
 use super::super::plan::QueryPlan;
 use super::super::set::{Set, SetOp};
@@ -19,6 +20,20 @@ impl<T> All<T>
 where
     T: Record + 'static,
 {
+    /// Binds a runtime value after selecting this read terminal.
+    pub fn bind<V>(mut self, var: &Var<V>, value: V) -> Self
+    where
+        V: Clone
+            + for<'q> sqlx::Encode<'q, crate::commons::Database>
+            + sqlx::Type<crate::commons::Database>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.scope = self.scope.bind(var, value);
+        self
+    }
+
     /// Assigns a typed expression to a selected output field.
     pub fn set<V>(mut self, target: impl IntoOutputTarget<V>, expr: impl IntoExpr<V>) -> Self
     where
@@ -99,6 +114,20 @@ impl<T> One<T>
 where
     T: Record + 'static,
 {
+    /// Binds a runtime value after selecting this read terminal.
+    pub fn bind<V>(mut self, var: &Var<V>, value: V) -> Self
+    where
+        V: Clone
+            + for<'q> sqlx::Encode<'q, crate::commons::Database>
+            + sqlx::Type<crate::commons::Database>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.scope = self.scope.bind(var, value);
+        self
+    }
+
     /// Assigns a typed expression to a selected output field.
     pub fn set<V>(mut self, target: impl IntoOutputTarget<V>, expr: impl IntoExpr<V>) -> Self
     where
@@ -142,6 +171,20 @@ impl<T> First<T>
 where
     T: Record + 'static,
 {
+    /// Binds a runtime value after selecting this read terminal.
+    pub fn bind<V>(mut self, var: &Var<V>, value: V) -> Self
+    where
+        V: Clone
+            + for<'q> sqlx::Encode<'q, crate::commons::Database>
+            + sqlx::Type<crate::commons::Database>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.scope = self.scope.bind(var, value);
+        self
+    }
+
     /// Assigns a typed expression to a selected output field.
     pub fn set<V>(mut self, target: impl IntoOutputTarget<V>, expr: impl IntoExpr<V>) -> Self
     where
@@ -173,6 +216,20 @@ impl<T> Slice<T>
 where
     T: Record + 'static,
 {
+    /// Binds a runtime value after selecting this read terminal.
+    pub fn bind<V>(mut self, var: &Var<V>, value: V) -> Self
+    where
+        V: Clone
+            + for<'q> sqlx::Encode<'q, crate::commons::Database>
+            + sqlx::Type<crate::commons::Database>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.scope = self.scope.bind(var, value);
+        self
+    }
+
     /// Assigns a typed expression to a selected output field.
     pub fn set<V>(mut self, target: impl IntoOutputTarget<V>, expr: impl IntoExpr<V>) -> Self
     where

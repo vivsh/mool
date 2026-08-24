@@ -9,8 +9,37 @@ pub enum QueryError {
     TableNotSet(&'static str),
     #[error("query source table mismatch: expected {expected}, got {got}")]
     TableMismatch { expected: String, got: String },
+    #[error("mutation source '{label}' is already attached")]
+    DuplicateMutationSource { label: String },
+    #[error("mutation target '{label}' cannot also be an additional source")]
+    MutationTargetSource { label: String },
+    #[error("column owner '{label}' is not attached to this mutation")]
+    MutationSourceNotAttached { label: String },
     #[error("unknown query alias or logical prefix '{0}'")]
     UnknownAlias(String),
+    #[cfg(any(feature = "text-search", feature = "fuzzy-search", feature = "vector"))]
+    #[error("unknown search definition '{name}' on table '{table}'")]
+    UnknownSearchDefinition { table: String, name: String },
+    #[cfg(any(feature = "text-search", feature = "fuzzy-search", feature = "vector"))]
+    #[error(
+        "search definition '{name}' on table '{table}' is {declared}, not requested {requested}"
+    )]
+    SearchCapabilityMismatch {
+        table: String,
+        name: String,
+        requested: &'static str,
+        declared: &'static str,
+    },
+    #[cfg(any(feature = "text-search", feature = "fuzzy-search", feature = "vector"))]
+    #[error("duplicate search definition '{name}' on table '{table}'")]
+    DuplicateSearchDefinition { table: String, name: String },
+    #[cfg(any(feature = "text-search", feature = "fuzzy-search", feature = "vector"))]
+    #[error("invalid search metadata '{name}' on table '{table}': {reason}")]
+    InvalidSearchMetadata {
+        table: String,
+        name: String,
+        reason: String,
+    },
     #[error("invalid projection field '{0}'")]
     InvalidProjection(String),
     #[error("reference '{reference}' is missing {field}")]

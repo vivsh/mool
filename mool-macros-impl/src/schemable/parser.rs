@@ -4,6 +4,13 @@ use syn::{
     spanned::Spanned,
 };
 
+#[cfg(feature = "text-search")]
+use super::search::FullTextSpec;
+#[cfg(feature = "fuzzy-search")]
+use super::search::FuzzySpec;
+#[cfg(feature = "vector")]
+use super::search::VectorSpec;
+
 // -------------------------------------------------------------------------------------
 // Namespace key allowlists (used only for better error messages; does not change acceptance)
 // -------------------------------------------------------------------------------------
@@ -32,6 +39,20 @@ static COLUMN_KEYS: &[&str] = &[
     "index_name",
     "unique",
     "unique_name",
+    #[cfg(feature = "fuzzy-search")]
+    "fuzzy",
+    #[cfg(feature = "vector")]
+    "vector",
+];
+
+static TABLE_KEYS: &[&str] = &[
+    "name",
+    "table",
+    "schema",
+    "primary_key",
+    "foreign_key",
+    #[cfg(feature = "text-search")]
+    "full_text",
 ];
 
 // -------------------------------------------------------------------------------------
@@ -363,6 +384,9 @@ pub struct ContainerAttrs {
     pub primary_key: Option<PrimaryKeySpec>,
     #[darling(default, multiple, rename = "foreign_key")]
     pub foreign_keys: Vec<ForeignKeySpec>,
+    #[cfg(feature = "text-search")]
+    #[darling(default, multiple, rename = "full_text")]
+    pub full_text: Vec<FullTextSpec>,
 }
 
 /// Database column metadata from #[column(...)]
@@ -422,6 +446,14 @@ pub struct ColumnAttrs {
     pub unique: bool,
     #[darling(default)]
     pub unique_name: Option<LitStr>,
+
+    #[cfg(feature = "fuzzy-search")]
+    #[darling(default)]
+    pub fuzzy: Option<FuzzySpec>,
+
+    #[cfg(feature = "vector")]
+    #[darling(default)]
+    pub vector: Option<VectorSpec>,
 }
 
 /// Combined field attributes across all namespaces
@@ -494,6 +526,7 @@ impl ContainerAttrs {
         let mut out = Self::default();
         for attr in attrs {
             if let Some(nested) = parse_ns_list(attr, "table")? {
+                enforce_namespace("table", &nested, TABLE_KEYS)?;
                 out = ContainerAttrs::from_list(&nested)
                     .map_err(|e| augment_darling_error(e, "Error decoding #[table]"))?;
             }
@@ -561,7 +594,15 @@ fn validate_semantics(
 ) -> Result<()> {
     validate_container_identifiers(container, ident)?;
     validate_fields(fields)?;
-    validate_table_constraints(container, fields, ident)
+    validate_table_constraints(container, fields, ident)?;
+    #[cfg(any(feature = "text-search", feature = "fuzzy-search", feature = "vector"))]
+    {
+        super::search::validate_search_metadata(container, fields, ident)
+    }
+    #[cfg(not(any(feature = "text-search", feature = "fuzzy-search", feature = "vector")))]
+    {
+        Ok(())
+    }
 }
 
 fn validate_container_identifiers(container: &ContainerAttrs, ident: &syn::Ident) -> Result<()> {
@@ -810,14 +851,14 @@ fn validate_constraint_columns<'a>(
     Ok(())
 }
 
-fn validate_qualified_identifier(value: &str, span: proc_macro2::Span) -> Result<()> {
+pub(super) fn validate_qualified_identifier(value: &str, span: proc_macro2::Span) -> Result<()> {
     for part in value.split('.') {
         validate_identifier(part, span)?;
     }
     Ok(())
 }
 
-fn validate_identifier(value: &str, span: proc_macro2::Span) -> Result<()> {
+pub(super) fn validate_identifier(value: &str, span: proc_macro2::Span) -> Result<()> {
     let mut chars = value.chars();
     let valid_start = chars
         .next()
@@ -831,7 +872,7 @@ fn validate_identifier(value: &str, span: proc_macro2::Span) -> Result<()> {
     ))
 }
 
-fn effective_column_name(field: &FieldMeta) -> String {
+pub(super) fn effective_column_name(field: &FieldMeta) -> String {
     field
         .column
         .name
@@ -841,7 +882,7 @@ fn effective_column_name(field: &FieldMeta) -> String {
         .unwrap_or_default()
 }
 
-fn is_physical_column(field: &FieldMeta) -> bool {
+pub(super) fn is_physical_column(field: &FieldMeta) -> bool {
     !field.column.skip && !field.column.flatten && field.column.prefetch.is_none()
 }
 
@@ -851,7 +892,7 @@ fn is_relation_field(field: &FieldMeta) -> bool {
         || field.column.prefetch.is_some()
 }
 
-fn field_span(field: &FieldMeta) -> proc_macro2::Span {
+pub(super) fn field_span(field: &FieldMeta) -> proc_macro2::Span {
     field
         .ident
         .as_ref()

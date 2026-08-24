@@ -11,6 +11,19 @@ requires one backend; backendless builds retain metadata and migration
 registration. PostgreSQL and SQLite migrations are supported. MySQL and
 MariaDB migrations are not supported.
 
+Search support is independently feature-gated and narrower than the general
+backend floor:
+
+| Feature | PostgreSQL | MySQL | MariaDB | SQLite |
+| --- | --- | --- | --- | --- |
+| `text-search` | SQL support; live-version claims require CI fixtures | SQL support; live-version claims require CI fixtures | SQL support; live-version claims require CI fixtures | Unsupported |
+| `fuzzy-search` | `pg_trgm`; live-version claims require CI fixtures | Unsupported | Unsupported | Unsupported |
+| `vector` | pgvector float vectors; live-version claims require CI fixtures | Unsupported | MariaDB 11.8 target, pending live fixture | Unsupported |
+
+SQL conformance tests are not a substitute for live backend evidence. A
+database/version pair must pass its live CRUD, distance/ranking, migration, and
+`EXPLAIN` fixture before release documentation calls it supported.
+
 Model schema inference is trait-based for Chrono, `time`, UUID, JSON, and custom
 `ColumnType` implementations. PostgreSQL native arrays derive their DDL names
 from SQLx type metadata. Explicit `#[column(type = "...")]` annotations remain

@@ -85,6 +85,27 @@ impl Renderer {
             ExprNode::Custom { expression, args } => {
                 self.render_custom_expression(expression, args, mode)
             }
+            #[cfg(feature = "text-search")]
+            ExprNode::TextSearch {
+                table,
+                name,
+                query,
+                result,
+                mode: query_mode,
+            } => self.render_text_search(table, name, query, *result, *query_mode, mode),
+            #[cfg(feature = "fuzzy-search")]
+            ExprNode::Fuzzy {
+                column,
+                query,
+                operation,
+                threshold,
+            } => self.render_fuzzy(column, query, *operation, threshold.as_deref(), mode),
+            #[cfg(feature = "vector")]
+            ExprNode::VectorDistance {
+                column,
+                query,
+                operation,
+            } => self.render_vector_distance(column, query, *operation, mode),
             ExprNode::Over { expr, window } => {
                 super::super::render_window::render_over(self, expr, window, mode)
             }
@@ -380,7 +401,7 @@ impl Renderer {
     ) -> Result<String, QueryError> {
         match mode {
             RenderMode::Select(model) => self.resolve_model_column(column, model),
-            RenderMode::MutationRoot { source } => {
+            RenderMode::MutationRoot { source, .. } => {
                 let table = source_table(source)?;
                 let root = table.data.name.as_ref();
                 validate_identifier(root)?;
@@ -440,15 +461,11 @@ impl Renderer {
                 }
                 Ok(format!("{reference}.{}", column.name))
             }
-            (RenderMode::MutationRoot { source }, ColumnOwner::Root(table)) => {
-                validate_table_source(table, source)?;
-                Ok(column.name.to_string())
+            (RenderMode::MutationRoot { source, sources }, ColumnOwner::Root(table)) => {
+                self.render_mutation_table_column(table, &column.name, source, sources)
             }
-            (RenderMode::MutationRoot { .. }, ColumnOwner::Source(source)) => {
-                Err(QueryError::BindError(format!(
-                    "mutation filters do not support source column '{}'",
-                    super::super::validate::source_label(source)
-                )))
+            (RenderMode::MutationRoot { source, sources }, ColumnOwner::Source(owner)) => {
+                self.render_mutation_source_column(owner, &column.name, source, sources)
             }
             (RenderMode::MutationRoot { .. }, ColumnOwner::Reference(reference)) => {
                 Err(QueryError::BindError(format!(
@@ -457,6 +474,54 @@ impl Renderer {
                 )))
             }
         }
+    }
+
+    fn render_mutation_table_column(
+        &self,
+        table: &super::super::handles::Table,
+        column: &str,
+        target: &super::super::source::Source,
+        sources: &[super::super::source::Source],
+    ) -> Result<String, QueryError> {
+        if validate_table_source(table, target).is_ok() {
+            if sources.is_empty() {
+                return Ok(column.to_string());
+            }
+            return Ok(format!("{}.{}", table.data.name, column));
+        }
+        let owner = super::super::source::Source::Table(table.clone());
+        self.render_attached_mutation_column(&owner, column, sources)
+    }
+
+    fn render_mutation_source_column(
+        &self,
+        owner: &super::super::source::Source,
+        column: &str,
+        target: &super::super::source::Source,
+        sources: &[super::super::source::Source],
+    ) -> Result<String, QueryError> {
+        if validate_source_identity(owner, target).is_ok() {
+            return Ok(column.to_string());
+        }
+        self.render_attached_mutation_column(owner, column, sources)
+    }
+
+    fn render_attached_mutation_column(
+        &self,
+        owner: &super::super::source::Source,
+        column: &str,
+        sources: &[super::super::source::Source],
+    ) -> Result<String, QueryError> {
+        let Some(index) = sources.iter().position(|source| source == owner) else {
+            return Err(QueryError::MutationSourceNotAttached {
+                label: super::super::validate::source_label(owner),
+            });
+        };
+        Ok(format!(
+            "{}.{}",
+            super::mutation_source_alias(index),
+            column
+        ))
     }
 
     fn validate_operator(&self, op: &str) -> Result<(), QueryError> {

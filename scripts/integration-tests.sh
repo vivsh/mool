@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  scripts/integration-tests.sh [sqlite|postgres|mysql|mariadb|all] [smoke|all]
+  scripts/integration-tests.sh [sqlite|postgres|mysql|mariadb|all] [smoke|search|all]
 
 Environment:
   POSTGRES_DATABASE_URL  Base Postgres URL for sqlx::test.
@@ -21,6 +21,8 @@ Notes:
   database from the provided base URL and drops it after the test run.
   Suite "smoke" runs CRUD interoperability only. Suite "all" also verifies
   commit, rollback, savepoint, and rollback-on-drop transaction behavior.
+  Suite "search" runs capability-specific live search fixtures. PostgreSQL
+  requires pg_trgm and vector; MariaDB vectors require the 11.8 target line.
 USAGE
 }
 
@@ -109,9 +111,47 @@ run_cargo_suite() {
     return
   fi
 
+  if [[ "${selected_suite}" == "search" ]]; then
+    run_search_suite "${engine}"
+    return
+  fi
+
   cargo test --locked -p mool --no-default-features --features "${features}" \
     --test sqlx_smoke --test sqlx_transactions --test batch_writes_sqlx \
-    --test datetime_sqlx --test many_to_many_mutations_sqlx --test test_database -- --ignored
+    --test datetime_sqlx --test many_to_many_mutations_sqlx \
+    --test source_driven_mutations_sqlx --test test_database -- --ignored
+}
+
+run_search_suite() {
+  local engine="$1"
+  case "${engine}" in
+    postgres)
+      run_search_test "postgres text-search" postgres_full_text_lifecycle
+      run_search_test "postgres fuzzy-search" postgres_fuzzy_lifecycle
+      run_search_test "postgres vector" postgres_vector_lifecycle
+      return
+      ;;
+    mysql)
+      run_search_test "mysql text-search" mysql_family_full_text_lifecycle
+      return
+      ;;
+    mariadb)
+      run_search_test "mariadb text-search" mysql_family_full_text_lifecycle
+      run_search_test "mariadb vector" mariadb_vector_lifecycle
+      return
+      ;;
+    sqlite)
+      echo "SQLite search capabilities are negative conformance tests only"
+      return
+      ;;
+  esac
+}
+
+run_search_test() {
+  local features="$1"
+  local test_name="$2"
+  cargo test --locked -p mool --no-default-features --features "${features}" \
+    --test search_features_sqlx "${test_name}" -- --ignored --exact
 }
 
 main() {
@@ -133,7 +173,7 @@ main() {
   esac
 
   case "${selected_suite}" in
-    smoke|all)
+    smoke|search|all)
       ;;
     *)
       echo "unknown suite: ${selected_suite}" >&2

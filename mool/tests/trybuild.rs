@@ -61,3 +61,53 @@ fn public_macro_contracts_compile_as_documented() {
     #[cfg(all(feature = "postgres", target_os = "linux"))]
     tests.compile_fail("tests/compile/fail/unnest_nested_array.rs");
 }
+
+/// Verifies enabled search derive contracts independently from the legacy snapshot suite.
+#[cfg(all(
+    feature = "compile-contracts",
+    any(feature = "text-search", feature = "fuzzy-search", feature = "vector")
+))]
+#[test]
+fn search_macro_contracts_compile_as_documented() {
+    let tests = trybuild::TestCases::new();
+    #[cfg(feature = "text-search")]
+    tests.pass("tests/compile/pass/search_text_api.rs");
+    #[cfg(all(feature = "fuzzy-search", feature = "postgres"))]
+    tests.pass("tests/compile/pass/search_fuzzy_api.rs");
+    #[cfg(feature = "vector")]
+    tests.pass("tests/compile/pass/search_vector_api.rs");
+    #[cfg(feature = "text-search")]
+    tests.compile_fail("tests/compile/fail/search_full_text_unknown_column.rs");
+    #[cfg(feature = "fuzzy-search")]
+    tests.compile_fail("tests/compile/fail/search_fuzzy_wrong_type.rs");
+    #[cfg(feature = "vector")]
+    tests.compile_fail("tests/compile/fail/search_vector_wrong_type.rs");
+    #[cfg(feature = "vector")]
+    tests.compile_fail("tests/compile/fail/search_vector_zero_dimension.rs");
+    #[cfg(feature = "vector")]
+    tests.compile_fail("tests/compile/fail/search_vector_nonliteral_dimension.rs");
+    #[cfg(feature = "vector")]
+    tests.compile_fail("tests/compile/fail/search_vector_dynamic_ann.rs");
+    #[cfg(all(feature = "text-search", feature = "fuzzy-search"))]
+    tests.compile_fail("tests/compile/fail/search_duplicate_identity.rs");
+}
+
+/// Verifies capability attributes disappear completely when their Cargo feature is disabled.
+#[cfg(all(
+    feature = "compile-contracts",
+    any(
+        not(feature = "text-search"),
+        not(feature = "fuzzy-search"),
+        not(feature = "vector")
+    )
+))]
+#[test]
+fn disabled_search_attributes_fail_to_compile() {
+    let tests = trybuild::TestCases::new();
+    #[cfg(not(feature = "text-search"))]
+    tests.compile_fail("tests/compile/fail/search_disabled_full_text.rs");
+    #[cfg(not(feature = "fuzzy-search"))]
+    tests.compile_fail("tests/compile/fail/search_disabled_fuzzy.rs");
+    #[cfg(not(feature = "vector"))]
+    tests.compile_fail("tests/compile/fail/search_disabled_vector.rs");
+}

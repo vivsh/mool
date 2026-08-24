@@ -5,6 +5,7 @@ use crate::interfaces::{Model, Record};
 use crate::placeholders::Dialect;
 
 use super::super::plan::QueryPlan;
+use super::super::traits::IntoTableSource;
 use super::super::{BatchPlan, ColumnSet};
 use super::{
     BatchInsert, BatchUpdate, BatchUpsert, Insert, OwnedBatchInsert, OwnedBatchUpdate,
@@ -39,6 +40,15 @@ impl<T> OwnedUpdate<T>
 where
     T: Record,
 {
+    /// Attaches a typed read-only source to this owned single-target update.
+    pub fn from<S>(mut self, source: S) -> Self
+    where
+        S: IntoTableSource,
+    {
+        self.scope = self.scope.with_mutation_source(source);
+        self
+    }
+
     /// Renders SQL and parameter metadata without executing the update.
     pub fn plan(&self) -> Result<QueryPlan, QueryError> {
         self.scope.plan_update(&&self.row, Dialect::active())

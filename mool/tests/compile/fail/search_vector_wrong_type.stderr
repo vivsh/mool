@@ -1,0 +1,5 @@
+error: vector configuration requires a non-null Vector column
+ --> tests/compile/fail/search_vector_wrong_type.rs:8:5
+  |
+8 |     embedding: Vec<f32>,
+  |     ^^^^^^^^^

@@ -1,0 +1,5 @@
+error: full_text 'content' references unknown column 'missing'
+ --> tests/compile/fail/search_full_text_unknown_column.rs:5:8
+  |
+5 | struct Document {
+  |        ^^^^^^^^

@@ -20,6 +20,8 @@ use crate::QueryError;
 mod expr;
 mod params;
 mod projection;
+#[cfg(any(feature = "text-search", feature = "fuzzy-search", feature = "vector"))]
+mod search;
 mod sources;
 mod statements;
 mod write;
@@ -37,7 +39,14 @@ pub(super) struct SelectModel {
 #[derive(Clone, Copy)]
 pub(super) enum RenderMode<'a> {
     Select(&'a SelectModel),
-    MutationRoot { source: &'a Source },
+    MutationRoot {
+        source: &'a Source,
+        sources: &'a [Source],
+    },
+}
+
+pub(super) fn mutation_source_alias(index: usize) -> String {
+    format!("__mool_source_{index}")
 }
 
 impl SelectModel {

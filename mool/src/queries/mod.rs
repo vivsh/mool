@@ -20,6 +20,8 @@ mod output;
 mod plan;
 mod planning;
 mod scope;
+#[cfg(any(feature = "text-search", feature = "fuzzy-search", feature = "vector"))]
+mod search;
 mod set;
 mod source;
 mod traits;
@@ -38,10 +40,27 @@ pub(super) const GENERATED_PREFIX: &str = "__typed_";
 pub use api::{backref, from, many_to_many, meta, out, val, var};
 pub(crate) use batch::InsertConflict;
 pub use batch::{BatchPlan, BatchStatementPlan, ColumnSet};
+#[cfg(all(feature = "fuzzy-search", feature = "postgres"))]
+pub(crate) use expr::FuzzyOperation;
+#[cfg(all(
+    feature = "text-search",
+    any(feature = "postgres", feature = "mysql", feature = "mariadb")
+))]
+pub(crate) use expr::TextQueryMode;
+#[cfg(all(feature = "vector", feature = "postgres"))]
+pub(crate) use expr::VectorOperation;
 pub use expr::{ColumnRef, Expr, IntoExpr};
 pub(crate) use expr::{many_to_many_exists, relation_aggregate, relation_exists};
 pub use extension::{DbExpression, DbFunction, ExprRenderCtx, FunctionArgs, IntoFunctionArgs};
 pub use plan::{ParamSource, ParamSpec, QueryPlan};
+#[cfg(feature = "fuzzy-search")]
+pub use search::FuzzyTextExt;
+#[cfg(feature = "vector")]
+pub use search::VectorSimilarityExt;
+#[cfg(all(feature = "vector", feature = "postgres"))]
+pub(crate) use search::vector_expr;
+#[cfg(all(feature = "fuzzy-search", feature = "postgres"))]
+pub(crate) use search::{fuzzy_expr, fuzzy_predicate};
 pub use source::{SourceKind, SourceMeta};
 
 /// SQL function and expression helpers for typed queries.

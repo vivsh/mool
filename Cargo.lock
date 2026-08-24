@@ -473,9 +473,9 @@ dependencies = [
 
 [[package]]
 name = "gaman"
-version = "0.3.34"
+version = "0.3.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bade16c8a6f331a1b42841d10bf64eb3e1054c37e1e423b082dab894095fae9d"
+checksum = "31ac03367d329426c8b2976efcdb3375d6b0c6babeaf89aba2cdf801db763df3"
 dependencies = [
  "gaman-core",
  "serde",
@@ -488,9 +488,9 @@ dependencies = [
 
 [[package]]
 name = "gaman-core"
-version = "0.3.34"
+version = "0.3.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78d53f64939cc48d6f1ba8f386ea86bd6e2920aebe93e68d4ddcaae8cc6d4162"
+checksum = "dee5047dc432aac5982779a7f3b381c49c302ae67432ed76a136d5da56a547e9"
 dependencies = [
  "chrono",
  "serde",
@@ -895,6 +895,7 @@ dependencies = [
  "gaman-core",
  "indexmap",
  "mool-macros",
+ "pgvector",
  "proptest",
  "schemars",
  "serde",
@@ -1101,6 +1102,15 @@ name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
+
+[[package]]
+name = "pgvector"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3673cba5b9a124916096a423b806a9f29620972c6c97b08db5f2053e9428b481"
+dependencies = [
+ "sqlx",
+]
 
 [[package]]
 name = "pin-project-lite"

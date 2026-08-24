@@ -46,6 +46,7 @@ impl Renderer {
                 expr,
                 RenderMode::MutationRoot {
                     source: &scope.source,
+                    sources: &scope.mutation_sources,
                 },
             ),
         }

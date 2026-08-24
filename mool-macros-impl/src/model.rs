@@ -77,6 +77,7 @@ fn derive_model_impl(
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let into_table = gen_into_table(&parsed, &crate_path);
     let sql_enum_schema = gen_sql_enum_schema(&parsed, &crate_path);
+    let search_schema = gen_search_schema(&parsed, &crate_path);
 
     quote! {
         #record
@@ -87,10 +88,12 @@ fn derive_model_impl(
             type PrimaryKey = #pk_type;
 
             fn model_schema() -> #crate_path::ModelSchema<Self> {
-                #crate_path::ModelSchema::new(
+                let schema = #crate_path::ModelSchema::new(
                     <Self as #crate_path::Record>::record_schema(),
                     &[#(#pk_columns),*],
-                )
+                );
+                #search_schema
+                schema
             }
 
             fn primary_key(&self) -> Self::PrimaryKey {
@@ -159,7 +162,7 @@ fn gen_into_table(
         .fields
         .iter()
         .filter(is_table_field)
-        .filter_map(gen_index);
+        .filter_map(|field| gen_index(field, crate_path));
     let constraints = parsed
         .fields
         .iter()
@@ -167,7 +170,6 @@ fn gen_into_table(
         .filter_map(gen_unique_constraint);
     let primary_key = gen_primary_key(parsed);
     let foreign_keys = parsed.container.foreign_keys.iter().map(gen_foreign_key);
-
     quote! {
         impl #impl_generics #crate_path::schema::IntoTable for #ident #ty_generics #where_clause {
             fn into_table(
@@ -202,6 +204,14 @@ fn gen_column(
     let name = column_name(field);
     let ty = &field.ty;
     let inferred_array_element = array_inner_type(ty);
+    #[cfg(feature = "vector")]
+    let is_vector = crate::schemable::is_vector_type(ty);
+    #[cfg(feature = "vector")]
+    let vector_dimensions = field
+        .column
+        .vector
+        .as_ref()
+        .and_then(|spec| spec.dimensions.map(|dimensions| dimensions.0));
     let nullable_tokens = gen_nullable(
         field,
         field.column.serial || field.column.sql_type.is_some() || inferred_array_element.is_some(),
@@ -231,6 +241,26 @@ fn gen_column(
     if field.column.serial {
         return Some(quote! {
             table = table.column(#name, "bigserial", |c| {
+                #body
+            });
+        });
+    }
+    #[cfg(feature = "vector")]
+    if is_vector {
+        let dimensions = match vector_dimensions {
+            Some(dimensions) => quote! { ::core::option::Option::Some(#dimensions) },
+            None => quote! { ::core::option::Option::<usize>::None },
+        };
+        return Some(quote! {
+            let sql_type = match (dialect, #dimensions) {
+                (#crate_path::gaman::core::Dialect::Postgres, Some(dimensions)) => format!("vector({dimensions})"),
+                (#crate_path::gaman::core::Dialect::Mariadb, Some(dimensions)) => format!("VECTOR({dimensions})"),
+                (#crate_path::gaman::core::Dialect::Postgres, None) => "vector".to_string(),
+                (#crate_path::gaman::core::Dialect::Mariadb, None) => "VECTOR".to_string(),
+                (#crate_path::gaman::core::Dialect::Mysql, _) => "vector".to_string(),
+                (#crate_path::gaman::core::Dialect::Sqlite, _) => "vector".to_string(),
+            };
+            table = table.column(#name, sql_type, |c| {
                 #body
             });
         });
@@ -279,6 +309,206 @@ fn gen_column(
     })
 }
 
+#[cfg(any(feature = "text-search", feature = "fuzzy-search", feature = "vector"))]
+fn gen_search_schema(
+    parsed: &ParsedStruct,
+    crate_path: &proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    let metadata = gen_search_metadata(parsed, crate_path);
+    quote! { let schema = schema.search(#metadata); }
+}
+
+#[cfg(not(any(feature = "text-search", feature = "fuzzy-search", feature = "vector")))]
+fn gen_search_schema(
+    _parsed: &ParsedStruct,
+    _crate_path: &proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    proc_macro2::TokenStream::new()
+}
+
+#[cfg(any(feature = "text-search", feature = "fuzzy-search", feature = "vector"))]
+fn gen_search_metadata(
+    parsed: &ParsedStruct,
+    crate_path: &proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    let mut registrations = Vec::new();
+    #[cfg(feature = "text-search")]
+    registrations.extend(gen_full_text_metadata(parsed, crate_path));
+    #[cfg(feature = "fuzzy-search")]
+    registrations.extend(gen_fuzzy_metadata(parsed, crate_path));
+    #[cfg(feature = "vector")]
+    registrations.extend(gen_vector_metadata(parsed, crate_path));
+    quote! {{
+        let mut search = #crate_path::search::SearchTableMetadata::new();
+        #(#registrations)*
+        search
+    }}
+}
+
+#[cfg(feature = "text-search")]
+fn gen_full_text_metadata(
+    parsed: &ParsedStruct,
+    crate_path: &proc_macro2::TokenStream,
+) -> Vec<proc_macro2::TokenStream> {
+    let mut registrations = Vec::new();
+    for definition in &parsed.container.full_text {
+        let name = &definition.name;
+        let columns = definition.columns.iter().collect::<Vec<_>>();
+        let index_name = definition.index_name.as_ref().map(|value| {
+            quote! { definition = definition.index_name(#value); }
+        });
+        let config = definition
+            .postgres
+            .as_ref()
+            .and_then(|value| value.config.as_ref())
+            .map(|value| quote! { definition = definition.postgres_config(#value); });
+        registrations.push(quote! {
+            let mut definition = #crate_path::search::FullTextDefinition::new(
+                #name,
+                [#(#columns),*],
+            );
+            #index_name
+            #config
+            search = search.full_text(definition);
+        });
+    }
+    registrations
+}
+
+#[cfg(feature = "fuzzy-search")]
+fn gen_fuzzy_metadata(
+    parsed: &ParsedStruct,
+    crate_path: &proc_macro2::TokenStream,
+) -> Vec<proc_macro2::TokenStream> {
+    let mut registrations = Vec::new();
+    for field in parsed
+        .fields
+        .iter()
+        .filter(|field| field.column.fuzzy.is_some())
+    {
+        let column = column_name(field);
+        let Some(spec) = field.column.fuzzy.as_ref() else {
+            continue;
+        };
+        let index = match spec.index.as_deref().unwrap_or("none") {
+            "gist" => quote! { #crate_path::search::FuzzyIndex::GiSt },
+            "gin" => quote! { #crate_path::search::FuzzyIndex::Gin },
+            _ => quote! { #crate_path::search::FuzzyIndex::None },
+        };
+        let index_name = spec.index_name.as_ref().map(|value| {
+            quote! { definition = definition.index_name(#value); }
+        });
+        registrations.push(quote! {
+            let mut definition = #crate_path::search::FuzzyDefinition::new(#column)
+                .index(#index);
+            #index_name
+            search = search.fuzzy(definition);
+        });
+    }
+    registrations
+}
+
+#[cfg(feature = "vector")]
+fn gen_vector_metadata(
+    parsed: &ParsedStruct,
+    crate_path: &proc_macro2::TokenStream,
+) -> Vec<proc_macro2::TokenStream> {
+    parsed
+        .fields
+        .iter()
+        .filter_map(|field| gen_vector_registration(field, crate_path))
+        .collect()
+}
+
+#[cfg(feature = "vector")]
+fn gen_vector_registration(
+    field: &FieldMeta,
+    crate_path: &proc_macro2::TokenStream,
+) -> Option<proc_macro2::TokenStream> {
+    if !crate::schemable::is_vector_type(&field.ty) {
+        return None;
+    }
+    let column = column_name(field);
+    let spec = field.column.vector.as_ref();
+    let dimensions = spec
+        .and_then(|value| value.dimensions)
+        .map(|dimensions| dimensions.0)
+        .map(|value| {
+            quote! { definition = definition.dimensions(#value); }
+        });
+    let metric = vector_metric_tokens(spec.and_then(|value| value.metric.as_deref()), crate_path);
+    let index = vector_index_tokens(spec.and_then(|value| value.index.as_deref()), crate_path);
+    let index_name = spec
+        .and_then(|value| value.index_name.as_ref())
+        .map(|value| {
+            quote! { definition = definition.index_name(#value); }
+        });
+    let postgres = spec.and_then(postgres_vector_tokens);
+    let mariadb = spec
+        .and_then(|value| value.mariadb.as_ref())
+        .and_then(|options| options.m)
+        .map(|value| quote! { definition = definition.mariadb_m(#value); });
+    Some(quote! {
+        let mut definition = #crate_path::search::VectorDefinition::new(#column)
+            .metric(#metric)
+            .index(#index);
+        #dimensions
+        #index_name
+        #postgres
+        #mariadb
+        search = search.vector(definition);
+    })
+}
+
+#[cfg(feature = "vector")]
+fn vector_metric_tokens(
+    metric: Option<&str>,
+    crate_path: &proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    match metric.unwrap_or("cosine") {
+        "l2" => quote! { #crate_path::search::VectorMetric::L2 },
+        _ => quote! { #crate_path::search::VectorMetric::Cosine },
+    }
+}
+
+#[cfg(feature = "vector")]
+fn vector_index_tokens(
+    index: Option<&str>,
+    crate_path: &proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    match index.unwrap_or("none") {
+        "hnsw" => quote! { #crate_path::search::VectorIndex::Hnsw },
+        "ivfflat" => quote! { #crate_path::search::VectorIndex::IvfFlat },
+        _ => quote! { #crate_path::search::VectorIndex::None },
+    }
+}
+
+#[cfg(feature = "vector")]
+fn postgres_vector_tokens(spec: &crate::schemable::VectorSpec) -> Option<proc_macro2::TokenStream> {
+    spec.postgres.as_ref().map(|options| {
+        let m = quote_option(options.m);
+        let ef = quote_option(options.ef_construction);
+        let lists = options
+            .lists
+            .map(|value| quote! { definition = definition.postgres_lists(#value); });
+        quote! {
+            definition = definition.postgres_hnsw(#m, #ef);
+            #lists
+        }
+    })
+}
+
+#[cfg(feature = "vector")]
+fn quote_option<T>(value: Option<T>) -> proc_macro2::TokenStream
+where
+    T: quote::ToTokens,
+{
+    match value {
+        Some(value) => quote! { ::core::option::Option::Some(#value) },
+        None => quote! { ::core::option::Option::None },
+    }
+}
+
 fn gen_nullable(field: &FieldMeta, explicit_type: bool) -> Option<proc_macro2::TokenStream> {
     match field.column.nullable {
         Some(true) => Some(quote! { let c = c.nullable(); }),
@@ -306,15 +536,24 @@ fn gen_reference(field: &crate::schemable::FieldMeta) -> Option<proc_macro2::Tok
     })
 }
 
-fn gen_index(field: &crate::schemable::FieldMeta) -> Option<proc_macro2::TokenStream> {
+fn gen_index(
+    field: &crate::schemable::FieldMeta,
+    crate_path: &proc_macro2::TokenStream,
+) -> Option<proc_macro2::TokenStream> {
     if !field.column.index && field.column.index_name.is_none() {
         return None;
     }
     let name = column_name(field);
     Some(
         match field.column.index_name.as_ref().map(|lit| lit.value()) {
-            Some(index_name) => quote! { table = table.index(#index_name, &[#name]); },
-            None => quote! { table = table.index_columns(&[#name]); },
+            Some(index_name) => quote! {
+                table = table.index(
+                    #crate_path::schema::Index::columns([#name]).named(#index_name),
+                );
+            },
+            None => quote! {
+                table = table.index(#crate_path::schema::Index::columns([#name]));
+            },
         },
     )
 }

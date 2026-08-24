@@ -10,6 +10,24 @@ use super::{Renderer, SelectModel};
 use crate::QueryError;
 
 impl Renderer {
+    pub(super) fn render_mutation_with(
+        &mut self,
+        scope: &QueryScope,
+        sql: &mut String,
+    ) -> Result<(), QueryError> {
+        let inline = matches!(
+            self.dialect(),
+            crate::placeholders::Dialect::Mysql | crate::placeholders::Dialect::Mariadb
+        );
+        let ctes = scope.ctes.iter().filter(|cte| {
+            !inline
+                || !scope
+                    .mutation_sources
+                    .contains(&Source::Cte((*cte).clone()))
+        });
+        self.render_cte_list(ctes, sql)
+    }
+
     pub(super) fn render_with(
         &mut self,
         scope: &QueryScope,
@@ -27,6 +45,80 @@ impl Renderer {
         }
         sql.push(' ');
         Ok(())
+    }
+
+    fn render_cte_list<'a>(
+        &mut self,
+        ctes: impl Iterator<Item = &'a CteSource>,
+        sql: &mut String,
+    ) -> Result<(), QueryError> {
+        let mut rendered = Vec::new();
+        for cte in ctes {
+            let mut item = String::new();
+            self.render_cte(cte, &mut item)?;
+            rendered.push(item);
+        }
+        if !rendered.is_empty() {
+            sql.push_str("WITH ");
+            sql.push_str(&rendered.join(", "));
+            sql.push(' ');
+        }
+        Ok(())
+    }
+
+    pub(super) fn render_mutation_sources(
+        &mut self,
+        sources: &[Source],
+        sql: &mut String,
+    ) -> Result<(), QueryError> {
+        for (index, source) in sources.iter().enumerate() {
+            if index > 0 {
+                sql.push_str(", ");
+            }
+            self.render_mutation_source(source, index, sql)?;
+        }
+        Ok(())
+    }
+
+    fn render_mutation_source(
+        &mut self,
+        source: &Source,
+        index: usize,
+        sql: &mut String,
+    ) -> Result<(), QueryError> {
+        let alias = super::mutation_source_alias(index);
+        match source {
+            Source::Table(table) => sql.push_str(&self.render_table_name(table)?),
+            Source::Cte(cte) if self.inline_mutation_ctes() => {
+                sql.push('(');
+                sql.push_str(&self.render_select(
+                    &cte.data.scope,
+                    &cte.data.model,
+                    cte.data.slice,
+                )?);
+                sql.push(')');
+            }
+            Source::Cte(cte) => sql.push_str(&cte.data.name),
+            Source::Subquery(subquery) => {
+                sql.push('(');
+                sql.push_str(&self.render_select(
+                    &subquery.data.scope,
+                    &subquery.data.model,
+                    subquery.data.slice,
+                )?);
+                sql.push(')');
+            }
+        }
+        sql.push_str(" AS ");
+        sql.push_str(&alias);
+        Ok(())
+    }
+
+    fn inline_mutation_ctes(&self) -> bool {
+        matches!(
+            self.dialect(),
+            crate::placeholders::Dialect::Mysql | crate::placeholders::Dialect::Mariadb
+        )
     }
 
     pub(super) fn render_from(

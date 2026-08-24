@@ -85,7 +85,15 @@ where
 {
     match source {
         Source::Table(table) => {
-            validate_table_parts(table, T::record_table_schema(), T::record_table_name())
+            let matches_model = table.data.model.as_ref().is_some_and(|model| {
+                model.schema.as_deref() == T::record_table_schema()
+                    && model.name.as_ref() == T::record_table_name()
+            });
+            if matches_model {
+                Ok(())
+            } else {
+                validate_table_parts(table, T::record_table_schema(), T::record_table_name())
+            }
         }
         Source::Cte(cte) => validate_output_columns::<T>(&cte.data.columns),
         Source::Subquery(subquery) => validate_output_columns::<T>(&subquery.data.columns),
@@ -211,26 +219,9 @@ pub(super) fn validate_expr_owners(
     allow_references: bool,
 ) -> Result<(), QueryError> {
     match node {
-        ExprNode::Column(column) => match &column.owner {
-            ColumnOwner::Root(table) => validate_table_source(table, source),
-            ColumnOwner::Source(owner) => validate_source_identity(owner, source),
-            ColumnOwner::Reference(reference) if allow_references => {
-                let Some(references) = references else {
-                    return Err(QueryError::UnknownAlias(reference.to_string()));
-                };
-                if is_logical_root(reference.as_ref(), source, root_alias)
-                    || references.contains(reference.as_ref())
-                {
-                    Ok(())
-                } else {
-                    Err(QueryError::UnknownAlias(reference.to_string()))
-                }
-            }
-            ColumnOwner::Reference(reference) => Err(QueryError::BindError(format!(
-                "mutation filters do not support reference column '{}'",
-                reference
-            ))),
-        },
+        ExprNode::Column(column) => {
+            validate_column_owner(column, source, references, root_alias, allow_references)
+        }
         ExprNode::Value(_) => Ok(()),
         ExprNode::Binary { left, right, .. } | ExprNode::Bool { left, right, .. } => {
             validate_expr_owners(left, source, references, root_alias, allow_references)?;
@@ -251,6 +242,30 @@ pub(super) fn validate_expr_owners(
                 validate_expr_owners(arg, source, references, root_alias, allow_references)?;
             }
             Ok(())
+        }
+        #[cfg(feature = "text-search")]
+        ExprNode::TextSearch { table, query, .. } => {
+            validate_table_source(table, source)?;
+            validate_expr_owners(query, source, references, root_alias, allow_references)
+        }
+        #[cfg(feature = "fuzzy-search")]
+        ExprNode::Fuzzy {
+            column,
+            query,
+            threshold,
+            ..
+        } => {
+            validate_column_owner(column, source, references, root_alias, allow_references)?;
+            validate_expr_owners(query, source, references, root_alias, allow_references)?;
+            if let Some(threshold) = threshold {
+                validate_expr_owners(threshold, source, references, root_alias, allow_references)?;
+            }
+            Ok(())
+        }
+        #[cfg(feature = "vector")]
+        ExprNode::VectorDistance { column, query, .. } => {
+            validate_column_owner(column, source, references, root_alias, allow_references)?;
+            validate_expr_owners(query, source, references, root_alias, allow_references)
         }
         ExprNode::Over { expr, window } => {
             validate_expr_owners(expr, source, references, root_alias, allow_references)?;
@@ -286,6 +301,14 @@ pub(super) fn contains_window(node: &ExprNode) -> bool {
         ExprNode::Function { args, .. } | ExprNode::Custom { args, .. } => {
             args.iter().any(contains_window)
         }
+        #[cfg(feature = "text-search")]
+        ExprNode::TextSearch { query, .. } => contains_window(query),
+        #[cfg(feature = "fuzzy-search")]
+        ExprNode::Fuzzy {
+            query, threshold, ..
+        } => contains_window(query) || threshold.as_deref().is_some_and(contains_window),
+        #[cfg(feature = "vector")]
+        ExprNode::VectorDistance { query, .. } => contains_window(query),
         ExprNode::InSource { left, source } => {
             contains_window(left) || source_contains_window(&source.source)
         }
@@ -305,6 +328,34 @@ pub(super) fn contains_window(node: &ExprNode) -> bool {
             None => false,
         },
         ExprNode::Column(_) | ExprNode::Value(_) => false,
+    }
+}
+
+fn validate_column_owner(
+    column: &ColumnRef,
+    source: &Source,
+    references: Option<&HashSet<&str>>,
+    root_alias: Option<&str>,
+    allow_references: bool,
+) -> Result<(), QueryError> {
+    match &column.owner {
+        ColumnOwner::Root(table) => validate_table_source(table, source),
+        ColumnOwner::Source(owner) => validate_source_identity(owner, source),
+        ColumnOwner::Reference(reference) if allow_references => {
+            let Some(references) = references else {
+                return Err(QueryError::UnknownAlias(reference.to_string()));
+            };
+            if is_logical_root(reference, source, root_alias)
+                || references.contains(reference.as_ref())
+            {
+                Ok(())
+            } else {
+                Err(QueryError::UnknownAlias(reference.to_string()))
+            }
+        }
+        ColumnOwner::Reference(reference) => Err(QueryError::BindError(format!(
+            "mutation filters do not support reference column '{reference}'"
+        ))),
     }
 }
 
@@ -460,7 +511,7 @@ pub(super) fn validate_var_name(name: &str) -> Result<(), QueryError> {
     Ok(())
 }
 
-pub(super) fn validate_identifier(value: &str) -> Result<(), QueryError> {
+pub(crate) fn validate_identifier(value: &str) -> Result<(), QueryError> {
     let mut chars = value.chars();
     let Some(first) = chars.next() else {
         return Err(QueryError::InvalidIdentifier(value.to_string()));

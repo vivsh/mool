@@ -16,9 +16,9 @@ use super::super::batch_validation::{
     validate_model_table, validate_unique_columns,
 };
 use super::super::binds::{
-    bind_insert_rows, bind_update_rows, collect_expr_binds, collect_expr_ctes, collect_source_ctes,
-    finish_plan, insert_bind, insert_columns, validate_bind_columns, validate_cte_usage,
-    validate_output_assignments,
+    bind_insert_rows, bind_update_rows, collect_expr_binds, collect_expr_ctes,
+    collect_source_binds, collect_source_ctes, finish_plan, insert_bind, insert_columns,
+    validate_bind_columns, validate_cte_usage, validate_output_assignments,
 };
 use super::super::expr::ExprNode;
 use super::super::handles::VarId;
@@ -600,6 +600,12 @@ impl QueryScope {
         for cte in &self.ctes {
             cte.data.scope.validate_scope_errors()?;
         }
+        for source in &self.mutation_sources {
+            match source {
+                Source::Subquery(subquery) => subquery.data.scope.validate_scope_errors()?,
+                Source::Cte(_) | Source::Table(_) => {}
+            }
+        }
         Ok(())
     }
 
@@ -636,7 +642,9 @@ impl QueryScope {
         self.validate_ctes(None)?;
         for node in self.expression_nodes() {
             reject_window(node, "mutation statements")?;
-            validate_expr_owners(node, &self.source, None, None, false)?;
+            if self.mutation_sources.is_empty() {
+                validate_expr_owners(node, &self.source, None, None, false)?;
+            }
         }
         Ok(())
     }
@@ -688,6 +696,9 @@ impl QueryScope {
         let mut used = HashSet::new();
         let mut named_used = HashSet::new();
         collect_source_ctes(&self.source, &mut used);
+        for source in &self.mutation_sources {
+            collect_source_ctes(source, &mut used);
+        }
         if let Some(references) = references {
             for reference in references.values() {
                 if defined.contains_key(reference.table_name) {
@@ -740,6 +751,9 @@ impl QueryScope {
     ) -> Result<(), QueryError> {
         for cte in &self.ctes {
             cte.data.scope.collect_binds_into(values)?;
+        }
+        for source in &self.mutation_sources {
+            collect_source_binds(source, values)?;
         }
         for node in self.expression_nodes() {
             collect_expr_binds(node, values)?;

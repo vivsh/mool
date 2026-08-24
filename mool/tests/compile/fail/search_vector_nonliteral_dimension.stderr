@@ -1,0 +1,5 @@
+error: Error decoding #[column] on field 'embedding': expected an integer literal
+ --> tests/compile/fail/search_vector_nonliteral_dimension.rs:7:34
+  |
+7 |     #[column(vector(dimensions = D, metric = "cosine"))]
+  |                                  ^

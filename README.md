@@ -57,6 +57,7 @@ mool = { version = "0.2", features = ["postgres", "migrations"] }
 mool = { version = "0.2", features = ["sqlite", "mock"] }
 mool = { version = "0.2", features = ["postgres", "time"] }
 mool = { version = "0.2", features = ["postgres", "test-support"] }
+mool = { version = "0.2", features = ["postgres", "text-search", "fuzzy-search", "vector"] }
 ```
 
 For SQLx-managed live test databases, declare SQLx directly in the consuming
@@ -99,6 +100,49 @@ Do not use `--all-features`: backend features are exclusive.
 
 `mool::prelude::*` is the normal application import. It includes the common
 query and model API plus only the extensions supported by the chosen backend.
+
+Search capabilities are independent opt-ins. A full-text definition names
+existing text columns; it does not add a model field or generated search
+handle:
+
+```rust
+#[derive(Debug, Clone, db::Model)]
+#[table(full_text(name = "content", columns = ["title", "body"]))]
+struct Document {
+    #[column(primary_key)]
+    id: i64,
+    #[column(fuzzy(index = "gist"))]
+    title: String,
+    body: Option<String>,
+    #[column(vector(dimensions = 1536, metric = "cosine", index = "hnsw"))]
+    embedding: db::types::Vector,
+}
+
+let documents = Document::table();
+let query = db::var::<String>().named("query");
+let needle = db::var::<db::types::Vector>().named("needle");
+
+let text = db::from(&documents)
+    .filter(documents.text_search("content", &query))
+    .sort(documents.text_relevance("content", &query).desc());
+
+let fuzzy = documents.title.fuzzy_match(&query, db::val(0.4_f64));
+let nearest = db::from(&documents)
+    .sort(documents.embedding.cosine_distance(&needle).asc())
+    .slice::<Document>(0, 20);
+```
+
+A bare `db::types::Vector` field needs no `#[column(vector)]` marker. It maps to
+an unconstrained PostgreSQL `vector` column with exact cosine search. Declare
+`dimensions = N` only when constraining storage or creating an ANN index;
+MariaDB requires that dimension because its physical type is `VECTOR(N)`.
+
+PostgreSQL full-text search, `pg_trgm`, and the `vector` extension use natural PostgreSQL
+DDL and operators. MySQL-family full-text search uses multi-column `FULLTEXT`;
+MariaDB vector support uses `VECTOR` and `VEC_DISTANCE_*`. SQLite search and
+MySQL vectors are rejected at planning/schema validation in this release.
+See [AI and search](docs/search.md) for feature gates, extension privileges,
+backend evidence, and ANN operational tradeoffs.
 
 ## Getting Started
 
@@ -172,6 +216,29 @@ db::from(&posts)
     .exec(&mut pool)
     .await?;
 ```
+
+Updates can read from typed tables, CTEs, and subqueries without introducing a
+join API. Correlations remain ordinary filters and computed assignments reuse
+`set`:
+
+```rust
+let users = User::table();
+
+db::from(&posts)
+    .filter(posts.user_id.eq(users.id.clone()))
+    .update(&PostPatch {
+        title: "A clearer title".to_string(),
+        published: true,
+    })
+    .set(&posts.title, users.email.clone())
+    .from(&users)
+    .exec(&mut pool)
+    .await?;
+```
+
+PostgreSQL additionally exposes `PostgresDeleteUsingExt::using` for native
+single-target `DELETE ... USING`. Portable deletes continue to use typed
+`EXISTS` and relation predicates.
 
 The same builder handles `insert`, `insert_many`, `update`, `delete`,
 `upsert`, `returning`, `count`, `exists`, `scalar`, and paginated reads.
@@ -474,6 +541,38 @@ let schema = db::schema()
     .model::<PostWithStatus>()
     .build()?;
 ```
+
+Reusable application stores can bind their models to independent physical
+tables with a compile-time prefix. Prefixes are exact fragments, so the
+separator is part of the declaration. `NoPrefix` provides an identity default.
+
+```rust
+use std::marker::PhantomData;
+
+struct Shop;
+
+impl db::TablePrefix for Shop {
+    const PREFIX: &'static str = "shop_";
+}
+
+struct Store<P: db::TablePrefix = db::NoPrefix>(PhantomData<P>);
+
+impl<P: db::TablePrefix> Store<P> {
+    fn products() {
+        let products = P::table::<Product>();
+        let _query = db::from(&products).all::<Product>();
+    }
+
+    fn schema() -> db::SchemaBuilder {
+        db::schema().model_with::<P, Product>()
+    }
+}
+```
+
+Only roots and schema models explicitly resolved through `P` are prefixed.
+Generated joins, relation predicates, prefetches, through tables, and foreign
+key targets retain their declared model metadata. Applications should not use
+relation-driven queries between independently prefixed tables.
 
 Small deterministic configuration or reference sets can be migration-managed
 from purpose-built records. Add `ManagedRecord` to opt into Serde-backed

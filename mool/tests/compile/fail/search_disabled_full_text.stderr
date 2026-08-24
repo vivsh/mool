@@ -1,0 +1,5 @@
+error: Unknown option 'full_text' in #[table(...)]
+ --> tests/compile/fail/search_disabled_full_text.rs:4:9
+  |
+4 | #[table(full_text(name = "content", columns = ["title"]))]
+  |         ^^^^^^^^^

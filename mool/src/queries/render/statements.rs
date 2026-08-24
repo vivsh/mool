@@ -132,16 +132,19 @@ impl Renderer {
         returning: Option<&SelectModel>,
     ) -> Result<String, QueryError> {
         let mut sql = String::new();
-        self.render_with(scope, &mut sql)?;
+        self.render_mutation_with(scope, &mut sql)?;
         sql.push_str("UPDATE ");
         let table = source_table(&scope.source)?;
         sql.push_str(&self.render_table_name(table)?);
+        let mysql_values = self.render_update_sources(scope, parts, &mut sql)?;
         sql.push_str(" SET ");
-        self.render_update_set(scope, parts, &mut sql)?;
+        self.render_update_set(scope, parts, mysql_values, &mut sql)?;
+        self.render_update_from(scope, &mut sql)?;
         self.render_filters(
             scope,
             RenderMode::MutationRoot {
                 source: &scope.source,
+                sources: &scope.mutation_sources,
             },
             &mut sql,
         )?;
@@ -155,14 +158,19 @@ impl Renderer {
         returning: Option<&SelectModel>,
     ) -> Result<String, QueryError> {
         let mut sql = String::new();
-        self.render_with(scope, &mut sql)?;
+        self.render_mutation_with(scope, &mut sql)?;
         sql.push_str("DELETE FROM ");
         let table = source_table(&scope.source)?;
         sql.push_str(&self.render_table_name(table)?);
+        if !scope.mutation_sources.is_empty() {
+            sql.push_str(" USING ");
+            self.render_mutation_sources(&scope.mutation_sources, &mut sql)?;
+        }
         self.render_filters(
             scope,
             RenderMode::MutationRoot {
                 source: &scope.source,
+                sources: &scope.mutation_sources,
             },
             &mut sql,
         )?;
@@ -349,6 +357,7 @@ impl Renderer {
             scope,
             RenderMode::MutationRoot {
                 source: &scope.source,
+                sources: &scope.mutation_sources,
             },
             sql,
         )
@@ -572,6 +581,7 @@ impl Renderer {
         &mut self,
         scope: &QueryScope,
         parts: &WriteParts,
+        mysql_values: bool,
         sql: &mut String,
     ) -> Result<(), QueryError> {
         for (idx, column) in parts.columns.iter().enumerate() {
@@ -584,9 +594,67 @@ impl Renderer {
             let Some(slot) = parts.slots.get(idx) else {
                 return Err(QueryError::BindError("missing write value".to_string()));
             };
-            sql.push_str(&self.render_write_slot(scope, slot)?);
+            match slot {
+                super::super::values::WriteSlot::Prebound(position) if mysql_values => {
+                    sql.push_str("__mool_values.__mool_value_");
+                    sql.push_str(&position.to_string());
+                }
+                _ => sql.push_str(&self.render_write_slot(scope, slot)?),
+            }
         }
         Ok(())
+    }
+
+    fn render_update_sources(
+        &mut self,
+        scope: &QueryScope,
+        parts: &WriteParts,
+        sql: &mut String,
+    ) -> Result<bool, QueryError> {
+        if !matches!(
+            self.dialect(),
+            crate::placeholders::Dialect::Mysql | crate::placeholders::Dialect::Mariadb
+        ) || scope.mutation_sources.is_empty()
+        {
+            return Ok(false);
+        }
+        let values = parts.prebound_count > 0
+            && scope
+                .mutation_sources
+                .iter()
+                .any(|source| !matches!(source, super::super::source::Source::Table(_)));
+        if values {
+            sql.push_str(", (SELECT ");
+            for position in 1..=parts.prebound_count {
+                if position > 1 {
+                    sql.push_str(", ");
+                }
+                sql.push_str(&self.placeholder(position));
+                sql.push_str(" AS __mool_value_");
+                sql.push_str(&position.to_string());
+            }
+            sql.push_str(") AS __mool_values");
+        }
+        sql.push_str(", ");
+        self.render_mutation_sources(&scope.mutation_sources, sql)?;
+        Ok(values)
+    }
+
+    fn render_update_from(
+        &mut self,
+        scope: &QueryScope,
+        sql: &mut String,
+    ) -> Result<(), QueryError> {
+        if scope.mutation_sources.is_empty()
+            || matches!(
+                self.dialect(),
+                crate::placeholders::Dialect::Mysql | crate::placeholders::Dialect::Mariadb
+            )
+        {
+            return Ok(());
+        }
+        sql.push_str(" FROM ");
+        self.render_mutation_sources(&scope.mutation_sources, sql)
     }
 
     fn render_slice(&self, slice: Option<(usize, usize)>, sql: &mut String) {

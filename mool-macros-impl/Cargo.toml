@@ -8,6 +8,12 @@ repository.workspace = true
 documentation.workspace = true
 description = "Internal macro implementation shared by Mool and framework wrappers"
 
+[features]
+default = []
+text-search = []
+fuzzy-search = []
+vector = []
+
 [dependencies]
 darling.workspace = true
 heck.workspace = true

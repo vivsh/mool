@@ -11,6 +11,7 @@ use super::super::binds::statement_from_plan;
 use super::super::expr::IntoExpr;
 use super::super::handles::{Column, Var};
 use super::super::plan::QueryPlan;
+use super::super::traits::IntoTableSource;
 use super::super::values::{WriteInput, WriteValues};
 use super::{
     ReturningBatchInsert, ReturningBatchUpdate, ReturningBatchUpsert, ReturningDelete,
@@ -88,6 +89,15 @@ where
     R: Record + 'static,
     T: WriteInput,
 {
+    /// Attaches a typed read-only source to this returning update.
+    pub fn from<S>(mut self, source: S) -> Self
+    where
+        S: IntoTableSource,
+    {
+        self.returning = self.returning.with_mutation_source(source);
+        self
+    }
+
     /// Binds a runtime value for a `var(...)` used by this returning update.
     pub fn bind<V>(mut self, var: &Var<V>, value: V) -> Self
     where
@@ -152,6 +162,16 @@ impl<R> ReturningDelete<R>
 where
     R: Record + 'static,
 {
+    /// Attaches one backend-supported typed source to this returning delete.
+    #[cfg(feature = "postgres")]
+    pub(crate) fn with_mutation_source<S>(mut self, source: S) -> Self
+    where
+        S: IntoTableSource,
+    {
+        self.returning = self.returning.with_mutation_source(source);
+        self
+    }
+
     /// Renders SQL and parameter metadata without executing the delete.
     pub fn plan(&self) -> Result<QueryPlan, QueryError> {
         self.returning.plan_delete(Dialect::active())

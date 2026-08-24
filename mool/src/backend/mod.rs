@@ -11,6 +11,8 @@ mod locking;
 mod mariadb;
 #[cfg(feature = "mysql")]
 mod mysql;
+#[cfg(all(feature = "text-search", any(feature = "mysql", feature = "mariadb")))]
+mod mysql_family_search;
 #[cfg(feature = "postgres")]
 mod postgres;
 #[cfg(feature = "sqlite")]
@@ -26,6 +28,8 @@ pub use locking::RowLockExt;
 pub use mariadb::*;
 #[cfg(feature = "mysql")]
 pub use mysql::*;
+#[cfg(all(feature = "text-search", any(feature = "mysql", feature = "mariadb")))]
+pub use mysql_family_search::{MySqlFullTextExt, MySqlFullTextMode};
 #[cfg(feature = "postgres")]
 pub use postgres::*;
 #[cfg(feature = "sqlite")]

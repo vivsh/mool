@@ -1,8 +1,10 @@
 //! Selected-dialect schema construction for models and authored metadata.
 
 use crate::managed_rows::ManagedRecordAdapter;
-use crate::schema::{FunctionDef, IntoTable, Schema, SchemaLoadError, TableBuilder};
-use crate::{ManagedRecord, Model};
+use crate::schema::{
+    FunctionDef, IntoTable, Schema, SchemaLoadError, SchemaValidationError, Table, TableBuilder,
+};
+use crate::{ManagedRecord, Model, NoPrefix, TablePrefix};
 use gaman::core::Dialect;
 use gaman::schema::SchemaBuilder as GamanSchemaBuilder;
 
@@ -40,6 +42,8 @@ pub fn schema() -> SchemaBuilder {
 pub struct SchemaBuilder {
     dialect: Dialect,
     inner: GamanSchemaBuilder,
+    extensions: std::collections::HashSet<String>,
+    issues: Vec<String>,
 }
 
 impl Default for SchemaBuilder {
@@ -55,6 +59,8 @@ impl SchemaBuilder {
         Self {
             dialect,
             inner: GamanSchemaBuilder::new(dialect),
+            extensions: std::collections::HashSet::new(),
+            issues: Vec::new(),
         }
     }
 
@@ -68,14 +74,55 @@ impl SchemaBuilder {
     }
 
     /// Adds a model table and its native enum definitions.
-    pub fn model<T>(mut self) -> Self
+    pub fn model<T>(self) -> Self
     where
+        T: Model + SqlEnumSchema,
+    {
+        self.model_with::<NoPrefix, T>()
+    }
+
+    /// Adds a prefixed model table and its native enum definitions.
+    ///
+    /// Only the registered table name is prefixed. Relation and foreign-key
+    /// targets retain the model's declared metadata.
+    pub fn model_with<P, T>(mut self) -> Self
+    where
+        P: TablePrefix,
         T: Model + SqlEnumSchema,
     {
         for registration in T::SQL_ENUMS {
             self = registration.apply(self);
         }
-        self.table::<T>()
+        let table = prefixed_table::<P, T>(&self.dialect);
+        if let Err(error) = crate::queries::__private::validate_identifier(&table.name) {
+            self.issues
+                .push(format!("{}: {error}", table.qualified_name()));
+        }
+        #[cfg(any(feature = "text-search", feature = "fuzzy-search", feature = "vector"))]
+        {
+            let model = T::model_schema();
+            if let Err(error) =
+                crate::search::__private::validate_dialect(&model.search, self.dialect)
+            {
+                self.issues
+                    .push(format!("{}: {error}", table.qualified_name()));
+            }
+            for extension in
+                crate::search::__private::required_extensions(&model.search, self.dialect)
+            {
+                self = self.extension(extension);
+            }
+            for statement in crate::search::__private::index_statements(
+                &table.name,
+                table.schema.as_deref(),
+                &model.search,
+                &self.dialect,
+            ) {
+                self = self.opaque(statement);
+            }
+        }
+        self.inner = self.inner.table_def(table);
+        self
     }
 
     /// Adds the complete desired managed-row set for one registered model table.
@@ -83,11 +130,23 @@ impl SchemaBuilder {
     /// The target model must be added through [`Self::model`] or [`Self::table`]
     /// in the same builder. Gaman validates the target, keys, and row values at
     /// [`Self::build`].
-    pub fn managed_rows<M>(mut self, rows: impl IntoIterator<Item = impl ManagedRecord>) -> Self
+    pub fn managed_rows<M>(self, rows: impl IntoIterator<Item = impl ManagedRecord>) -> Self
     where
         M: Model,
     {
-        let table = M::into_table(&self.dialect).qualified_name();
+        self.managed_rows_with::<NoPrefix, M>(rows)
+    }
+
+    /// Adds managed rows for a model table registered with `P`'s prefix.
+    pub fn managed_rows_with<P, M>(
+        mut self,
+        rows: impl IntoIterator<Item = impl ManagedRecord>,
+    ) -> Self
+    where
+        P: TablePrefix,
+        M: Model,
+    {
+        let table = prefixed_table::<P, M>(&self.dialect).qualified_name();
         self.inner = self
             .inner
             .managed_rows(table, rows.into_iter().map(ManagedRecordAdapter));
@@ -110,7 +169,10 @@ impl SchemaBuilder {
 
     /// Adds a database extension.
     pub fn extension(mut self, name: impl Into<String>) -> Self {
-        self.inner = self.inner.extension(name);
+        let name = name.into();
+        if self.extensions.insert(name.clone()) {
+            self.inner = self.inner.extension(name);
+        }
         self
     }
 
@@ -153,8 +215,24 @@ impl SchemaBuilder {
     /// Returns a schema-loading error when the assembled metadata is invalid
     /// for that dialect.
     pub fn build(self) -> Result<Schema, SchemaLoadError> {
+        if !self.issues.is_empty() {
+            return Err(SchemaLoadError::Validation(SchemaValidationError::Invalid(
+                self.issues.join("; "),
+            )));
+        }
         self.inner.build()
     }
+}
+
+/// Produces one model's desired table under a compile-time prefix.
+fn prefixed_table<P, M>(dialect: &Dialect) -> Table
+where
+    P: TablePrefix,
+    M: Model,
+{
+    let mut table = M::into_table(dialect);
+    table.name = P::table_name::<M>();
+    table
 }
 
 /// Registers one enum type with an enum-aware schema builder.

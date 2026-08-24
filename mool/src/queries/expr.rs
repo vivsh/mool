@@ -67,6 +67,27 @@ pub(super) enum ExprNode {
         expression: Arc<dyn CustomExpressionSpec>,
         args: Vec<ExprNode>,
     },
+    #[cfg(feature = "text-search")]
+    TextSearch {
+        table: Table,
+        name: Arc<str>,
+        query: Box<ExprNode>,
+        result: TextSearchResult,
+        mode: TextQueryMode,
+    },
+    #[cfg(feature = "fuzzy-search")]
+    Fuzzy {
+        column: ColumnRef,
+        query: Box<ExprNode>,
+        operation: FuzzyOperation,
+        threshold: Option<Box<ExprNode>>,
+    },
+    #[cfg(feature = "vector")]
+    VectorDistance {
+        column: ColumnRef,
+        query: Box<ExprNode>,
+        operation: VectorOperation,
+    },
     Over {
         expr: Box<ExprNode>,
         window: WindowSpec,
@@ -100,6 +121,51 @@ pub(super) enum ExprNode {
         predicate: Option<Box<ExprNode>>,
         negated: bool,
     },
+}
+
+/// Result shape produced by a full-text expression.
+#[cfg(feature = "text-search")]
+#[derive(Clone, Copy)]
+pub(super) enum TextSearchResult {
+    Matches,
+    Relevance,
+}
+
+/// Dialect-aware parsing mode for a full-text query string.
+#[cfg(feature = "text-search")]
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+pub(crate) enum TextQueryMode {
+    Plain,
+    Phrase,
+    WebSearch,
+    NaturalLanguage,
+    Boolean,
+}
+
+/// Exact trigram operation represented by a fuzzy expression.
+#[cfg(feature = "fuzzy-search")]
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+pub(crate) enum FuzzyOperation {
+    Similarity,
+    Distance,
+    MinimumSimilarity,
+    ThresholdMatch,
+    WordSimilarity,
+    StrictWordSimilarity,
+}
+
+/// Vector operation represented without embedding raw SQL in the AST.
+#[cfg(feature = "vector")]
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+pub(crate) enum VectorOperation {
+    L2Distance,
+    CosineDistance,
+    CosineSimilarity,
+    InnerProduct,
+    L1Distance,
 }
 
 /// SQL syntax used for a function call's argument list.

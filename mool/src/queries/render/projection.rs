@@ -77,7 +77,8 @@ impl Renderer {
             self.render_expr(
                 expr,
                 RenderMode::MutationRoot {
-                    source: &scope.source
+                    source: &scope.source,
+                    sources: &scope.mutation_sources,
                 }
             )?,
             output_column(column)?

@@ -1,0 +1,5 @@
+error: duplicate search definition 'title'
+ --> tests/compile/fail/search_duplicate_identity.rs:9:5
+  |
+9 |     title: String,
+  |     ^^^^^

@@ -1,0 +1,5 @@
+error: vector ANN indexes require dimensions = ...
+ --> tests/compile/fail/search_vector_dynamic_ann.rs:8:5
+  |
+8 |     embedding: db::types::Vector,
+  |     ^^^^^^^^^

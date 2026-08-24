@@ -19,7 +19,7 @@ use super::output::{IntoOutputTarget, SelectAssignment, select_assignment};
 use super::plan::QueryPlan;
 use super::render::SelectModel;
 use super::source::{Cte, CteData, CteSource, Source, Subquery, SubqueryData, SubquerySource};
-use super::traits::Projectable;
+use super::traits::{IntoTableSource, Projectable};
 use super::validate::{
     generated_source_name, validate_returning_projection, validate_returning_supported,
 };
@@ -34,6 +34,7 @@ use crate::query_error::LockWait;
 #[derive(Clone)]
 pub struct QueryScope {
     pub(super) source: Source,
+    pub(super) mutation_sources: Vec<Source>,
     pub(super) ctes: Vec<CteSource>,
     pub(super) filters: Vec<Predicate>,
     pub(super) groups: Vec<ExprNode>,
@@ -60,6 +61,7 @@ impl QueryScope {
     pub(super) fn new(source: Source) -> Self {
         Self {
             source,
+            mutation_sources: Vec::new(),
             ctes: Vec::new(),
             filters: Vec::new(),
             groups: Vec::new(),
@@ -75,6 +77,24 @@ impl QueryScope {
             binds: HashMap::new(),
             errors: Vec::new(),
         }
+    }
+
+    /// Attaches one typed table, CTE, or subquery to a mutation statement.
+    pub(crate) fn with_mutation_source<S>(mut self, source: S) -> Self
+    where
+        S: IntoTableSource,
+    {
+        let source = source.into_table_source();
+        let label = super::validate::source_label(&source);
+        if source == self.source {
+            self.errors.push(QueryError::MutationTargetSource { label });
+        } else if self.mutation_sources.contains(&source) {
+            self.errors
+                .push(QueryError::DuplicateMutationSource { label });
+        } else {
+            self.mutation_sources.push(source);
+        }
+        self
     }
 
     /// Adds a WHERE predicate.
@@ -285,6 +305,17 @@ impl QueryScope {
             scope: self,
             _marker: PhantomData,
         }
+    }
+}
+
+impl<R> ReturningScope<R> {
+    /// Attaches one typed table, CTE, or subquery to a returning mutation.
+    pub(crate) fn with_mutation_source<S>(mut self, source: S) -> Self
+    where
+        S: IntoTableSource,
+    {
+        self.scope = self.scope.with_mutation_source(source);
+        self
     }
 }
 

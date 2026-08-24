@@ -106,6 +106,8 @@ impl<T> RecordSchema<T> {
 pub struct ModelSchema<T> {
     pub(crate) record: RecordSchema<T>,
     pub(crate) primary_key_columns: &'static [&'static str],
+    #[cfg(any(feature = "text-search", feature = "fuzzy-search", feature = "vector"))]
+    pub(crate) search: crate::search::SearchTableMetadata,
 }
 
 impl<T> ModelSchema<T> {
@@ -114,6 +116,8 @@ impl<T> ModelSchema<T> {
         Self {
             record,
             primary_key_columns,
+            #[cfg(any(feature = "text-search", feature = "fuzzy-search", feature = "vector"))]
+            search: crate::search::SearchTableMetadata::new(),
         }
     }
 
@@ -125,6 +129,19 @@ impl<T> ModelSchema<T> {
     /// Primary-key column names in declaration order.
     pub fn primary_key_columns(&self) -> &'static [&'static str] {
         self.primary_key_columns
+    }
+
+    /// Replaces the table-bound search capability metadata.
+    #[cfg(any(feature = "text-search", feature = "fuzzy-search", feature = "vector"))]
+    pub fn search(mut self, search: crate::search::SearchTableMetadata) -> Self {
+        self.search = search;
+        self
+    }
+
+    /// Search capabilities declared for this model table.
+    #[cfg(any(feature = "text-search", feature = "fuzzy-search", feature = "vector"))]
+    pub fn search_metadata(&self) -> &crate::search::SearchTableMetadata {
+        &self.search
     }
 }
 
@@ -281,11 +298,7 @@ pub trait Model: Record + crate::schema::IntoTable {
     where
         Self: Sized + crate::queries::__private::HasCols,
     {
-        let table = match Self::table_schema() {
-            Some(schema) => crate::queries::__private::table_schema(schema, Self::table_name()),
-            None => crate::queries::__private::table(Self::table_name()),
-        };
-        crate::queries::__private::ModelTable::new_with_columns(table, Self::record_column_names())
+        model_table::<Self>(Self::table_name())
     }
 
     /// Return this row's primary-key value.
@@ -308,5 +321,66 @@ pub trait Model: Record + crate::schema::IntoTable {
             [column] => Some(*column),
             _ => None,
         }
+    }
+}
+
+/// Compile-time table-name prefix used to bind models to independent tables.
+///
+/// The prefix is appended exactly as declared. It changes only table handles
+/// and schema registrations explicitly constructed through this trait; model
+/// relation metadata and foreign-key targets are not rewritten.
+pub trait TablePrefix {
+    /// Exact fragment prepended to a model's declared table name.
+    const PREFIX: &'static str;
+
+    /// Returns the physical table name for `M` under this prefix.
+    fn table_name<M>() -> String
+    where
+        M: Model,
+    {
+        format!("{}{}", Self::PREFIX, M::table_name())
+    }
+
+    /// Returns a typed model table bound to this prefix.
+    ///
+    /// Identifier validation remains deferred to query planning so invalid
+    /// names use Mool's existing structured query error path.
+    fn table<M>() -> crate::queries::__private::ModelTable<M>
+    where
+        M: Model + crate::queries::__private::HasCols,
+    {
+        model_table::<M>(&Self::table_name::<M>())
+    }
+}
+
+/// Identity table prefix used by applications that keep model table names unchanged.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NoPrefix;
+
+impl TablePrefix for NoPrefix {
+    const PREFIX: &'static str = "";
+}
+
+/// Builds a typed model table for one resolved physical table name.
+fn model_table<M>(name: &str) -> crate::queries::__private::ModelTable<M>
+where
+    M: Model + crate::queries::__private::HasCols,
+{
+    let table = match M::table_schema() {
+        Some(schema) => crate::queries::__private::table_schema(schema, name),
+        None => crate::queries::__private::table(name),
+    };
+    #[cfg(any(feature = "text-search", feature = "fuzzy-search", feature = "vector"))]
+    {
+        let schema = M::model_schema();
+        crate::queries::__private::ModelTable::new_with_metadata(
+            table,
+            M::record_column_names(),
+            schema.search,
+        )
+    }
+    #[cfg(not(any(feature = "text-search", feature = "fuzzy-search", feature = "vector")))]
+    {
+        crate::queries::__private::ModelTable::new_with_columns(table, M::record_column_names())
     }
 }

@@ -6,7 +6,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::interfaces::Model;
+use crate::interfaces::{Model, Record};
 
 use super::expr::{
     ColumnRef, Expr, ExprNode, IntoExpr, IntoSourceColumn, OrderExpr, Predicate, ValueNode,
@@ -60,6 +60,16 @@ pub(super) struct TableData {
     pub(super) schema: Option<Arc<str>>,
     pub(super) name: Arc<str>,
     pub(super) columns: Option<Arc<[String]>>,
+    pub(super) model: Option<ModelIdentity>,
+    #[cfg(any(feature = "text-search", feature = "fuzzy-search", feature = "vector"))]
+    pub(super) search: Arc<crate::search::SearchTableMetadata>,
+}
+
+/// Logical model identity retained when a typed handle changes physical name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ModelIdentity {
+    pub(super) schema: Option<Arc<str>>,
+    pub(super) name: Arc<str>,
 }
 
 impl PartialEq for TableData {
@@ -233,6 +243,9 @@ impl Table {
                 schema: schema.map(Arc::from),
                 name: Arc::from(name),
                 columns: None,
+                model: None,
+                #[cfg(any(feature = "text-search", feature = "fuzzy-search", feature = "vector"))]
+                search: Arc::new(crate::search::SearchTableMetadata::new()),
             }),
         }
     }
@@ -243,6 +256,45 @@ impl Table {
                 schema: self.data.schema.clone(),
                 name: self.data.name.clone(),
                 columns: Some(Arc::from(columns)),
+                model: self.data.model.clone(),
+                #[cfg(any(feature = "text-search", feature = "fuzzy-search", feature = "vector"))]
+                search: self.data.search.clone(),
+            }),
+        }
+    }
+
+    #[cfg(any(feature = "text-search", feature = "fuzzy-search", feature = "vector"))]
+    fn with_metadata(
+        &self,
+        columns: Vec<String>,
+        search: crate::search::SearchTableMetadata,
+    ) -> Self {
+        Self {
+            data: Arc::new(TableData {
+                schema: self.data.schema.clone(),
+                name: self.data.name.clone(),
+                columns: Some(Arc::from(columns)),
+                model: self.data.model.clone(),
+                search: Arc::new(search),
+            }),
+        }
+    }
+
+    fn with_model<M>(&self) -> Self
+    where
+        M: Record,
+    {
+        Self {
+            data: Arc::new(TableData {
+                schema: self.data.schema.clone(),
+                name: self.data.name.clone(),
+                columns: self.data.columns.clone(),
+                model: Some(ModelIdentity {
+                    schema: M::record_table_schema().map(Arc::from),
+                    name: Arc::from(M::record_table_name()),
+                }),
+                #[cfg(any(feature = "text-search", feature = "fuzzy-search", feature = "vector"))]
+                search: self.data.search.clone(),
             }),
         }
     }
@@ -267,6 +319,7 @@ where
     /// Creates a model-typed table wrapper around an internal table source.
     #[doc(hidden)]
     pub fn new(table: Table) -> Self {
+        let table = table.with_model::<M>();
         let columns = M::cols_for_table(&table);
         Self {
             table,
@@ -279,6 +332,17 @@ where
     #[doc(hidden)]
     pub fn new_with_columns(table: Table, columns: Vec<String>) -> Self {
         Self::new(table.with_columns(columns))
+    }
+
+    /// Creates a model table with columns and table-bound capability metadata.
+    #[doc(hidden)]
+    #[cfg(any(feature = "text-search", feature = "fuzzy-search", feature = "vector"))]
+    pub fn new_with_metadata(
+        table: Table,
+        columns: Vec<String>,
+        search: crate::search::SearchTableMetadata,
+    ) -> Self {
+        Self::new(table.with_metadata(columns, search))
     }
 
     fn as_table(&self) -> &Table {

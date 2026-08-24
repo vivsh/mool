@@ -159,6 +159,20 @@ pub(super) fn collect_expr_binds(
             }
             Ok(())
         }
+        #[cfg(feature = "text-search")]
+        ExprNode::TextSearch { query, .. } => collect_expr_binds(query, values),
+        #[cfg(feature = "fuzzy-search")]
+        ExprNode::Fuzzy {
+            query, threshold, ..
+        } => {
+            collect_expr_binds(query, values)?;
+            if let Some(threshold) = threshold {
+                collect_expr_binds(threshold, values)?;
+            }
+            Ok(())
+        }
+        #[cfg(feature = "vector")]
+        ExprNode::VectorDistance { query, .. } => collect_expr_binds(query, values),
         ExprNode::Over { expr, window } => {
             collect_expr_binds(expr, values)?;
             collect_window_binds(window, values)
@@ -235,6 +249,19 @@ pub(super) fn collect_expr_ctes(node: &ExprNode, used: &mut HashSet<CteSource>) 
                 collect_expr_ctes(arg, used);
             }
         }
+        #[cfg(feature = "text-search")]
+        ExprNode::TextSearch { query, .. } => collect_expr_ctes(query, used),
+        #[cfg(feature = "fuzzy-search")]
+        ExprNode::Fuzzy {
+            query, threshold, ..
+        } => {
+            collect_expr_ctes(query, used);
+            if let Some(threshold) = threshold {
+                collect_expr_ctes(threshold, used);
+            }
+        }
+        #[cfg(feature = "vector")]
+        ExprNode::VectorDistance { query, .. } => collect_expr_ctes(query, used),
         ExprNode::Over { expr, window } => {
             collect_expr_ctes(expr, used);
             collect_window_ctes(window, used);

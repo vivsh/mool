@@ -11,6 +11,12 @@ description = "Derive macros for the Mool database toolkit"
 [lib]
 proc-macro = true
 
+[features]
+default = []
+text-search = ["mool-macros-impl/text-search"]
+fuzzy-search = ["mool-macros-impl/fuzzy-search"]
+vector = ["mool-macros-impl/vector"]
+
 [dependencies]
 mool-macros-impl = { path = "../mool-macros-impl", version = "0.1.7" }
 proc-macro-crate = "3.2"

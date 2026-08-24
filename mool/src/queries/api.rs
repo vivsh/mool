@@ -95,6 +95,7 @@ pub mod __private {
     pub use super::super::source::{ProjectedColumn, ProjectionSource};
     pub use super::super::traits::HasCols;
     pub use super::super::traits::{IntoColumnRef, IntoTableSource, Projectable};
+    pub(crate) use super::super::validate::validate_identifier;
 
     /// Creates a table handle from macro-generated metadata.
     pub fn table(name: &str) -> Table {

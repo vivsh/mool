@@ -33,6 +33,11 @@ mod raw;
 #[cfg(mool_has_backend)]
 pub mod relations;
 pub mod schema;
+#[cfg(all(
+    mool_has_backend,
+    any(feature = "text-search", feature = "fuzzy-search", feature = "vector")
+))]
+pub mod search;
 #[cfg(mool_has_backend)]
 pub mod sorting;
 #[cfg(mool_has_backend)]
@@ -70,7 +75,9 @@ pub use executor::*;
 #[cfg(mool_has_backend)]
 pub use filters::{FilterBuilder, Filterable};
 #[cfg(mool_has_backend)]
-pub use interfaces::{BatchRecord, Model, ModelSchema, Record, RecordSchema};
+pub use interfaces::{
+    BatchRecord, Model, ModelSchema, NoPrefix, Record, RecordSchema, TablePrefix,
+};
 #[cfg(mool_has_backend)]
 pub use managed_rows::{ManagedRecord, ManagedRecordError};
 #[cfg(feature = "migrations")]
@@ -80,6 +87,10 @@ pub use mool_macros::{Filterable, ManagedRecord, Model, Record, SortKey, SqlEnum
 pub use pagination::{Page, Pageable, Pagination, PaginationBuilder};
 #[cfg(mool_has_backend)]
 pub use placeholders::SqlDialect;
+#[cfg(all(mool_has_backend, feature = "fuzzy-search"))]
+pub use queries::FuzzyTextExt;
+#[cfg(all(mool_has_backend, feature = "vector"))]
+pub use queries::VectorSimilarityExt;
 #[cfg(mool_has_backend)]
 pub use queries::{
     DbExpression, DbFunction, Expr, ExprRenderCtx, FunctionArgs, ParamSource, ParamSpec, QueryPlan,

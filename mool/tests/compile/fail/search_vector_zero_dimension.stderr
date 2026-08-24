@@ -1,0 +1,5 @@
+error: vector dimension must be greater than zero
+ --> tests/compile/fail/search_vector_zero_dimension.rs:8:5
+  |
+8 |     embedding: db::types::Vector,
+  |     ^^^^^^^^^

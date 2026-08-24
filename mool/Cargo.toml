@@ -10,12 +10,12 @@ description = "A source-first Rust database toolkit for typed SQL queries, migra
 readme = "../README.md"
 
 [package.metadata.docs.rs]
-features = ["sqlite", "migrations", "time"]
+features = ["postgres", "migrations", "time", "text-search", "fuzzy-search", "vector"]
 no-default-features = true
 
 [features]
 default = []
-postgres = ["sqlx/postgres", "gaman/postgres", "gaman/fs"]
+postgres = ["sqlx/postgres", "gaman/postgres", "gaman/fs", "pgvector?/sqlx"]
 mysql = ["sqlx/mysql", "gaman/mysql", "gaman/fs"]
 mariadb = ["sqlx/mysql", "gaman/mariadb", "gaman/fs"]
 sqlite = ["sqlx/sqlite", "gaman/sqlite", "gaman/fs"]
@@ -25,12 +25,16 @@ mock = []
 test-support = ["dep:tempfile", "dep:tokio", "dep:uuid", "sqlx/migrate"]
 tracing = ["dep:tracing", "dep:twox-hash"]
 time = ["dep:time", "gaman/time-types", "sqlx/time"]
+text-search = ["mool-macros/text-search"]
+fuzzy-search = ["mool-macros/fuzzy-search"]
+vector = ["dep:pgvector", "mool-macros/vector"]
 
 [dependencies]
 chrono.workspace = true
 gaman.workspace = true
 gaman-core.workspace = true
 indexmap.workspace = true
+pgvector = { workspace = true, optional = true }
 mool-macros = { path = "../mool-macros", version = "0.1.8" }
 schemars.workspace = true
 serde.workspace = true
