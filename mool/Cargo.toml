@@ -35,7 +35,7 @@ gaman.workspace = true
 gaman-core.workspace = true
 indexmap.workspace = true
 pgvector = { workspace = true, optional = true }
-mool-macros = { path = "../mool-macros", version = "0.1.8" }
+mool-macros = { path = "../mool-macros", version = "0.1.9" }
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
