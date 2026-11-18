@@ -824,4 +824,6 @@ fn sqlite_rejects_search_plans_and_schema_metadata() {
     assert!(matches!(vector_error, db::QueryError::Unsupported { .. }));
 
     assert!(db::schema().model::<TextDocument>().build().is_err());
+    assert!(db::schema().model::<FuzzyDocument>().build().is_err());
+    assert!(db::schema().model::<VectorDocument>().build().is_err());
 }

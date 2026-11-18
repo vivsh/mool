@@ -178,12 +178,9 @@ impl sqlx::Type<sqlx::Sqlite> for Vector {
 impl<'q> sqlx::Encode<'q, sqlx::Sqlite> for Vector {
     fn encode_by_ref(
         &self,
-        arguments: &mut Vec<sqlx::sqlite::SqliteArgumentValue<'q>>,
+        arguments: &mut <sqlx::Sqlite as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        arguments.push(sqlx::sqlite::SqliteArgumentValue::Blob(
-            vector_le_bytes(self.as_slice()).into(),
-        ));
-        Ok(sqlx::encode::IsNull::No)
+        <Vec<u8> as sqlx::Encode<sqlx::Sqlite>>::encode(vector_le_bytes(self.as_slice()), arguments)
     }
 }
 

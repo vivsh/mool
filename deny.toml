@@ -1,8 +1,9 @@
 [advisories]
 yanked = "deny"
-# SQLx's MySQL authentication path only parses the server's public key and
-# encrypts a password with it; it never performs private-key operations.
-ignore = ["RUSTSEC-2023-0071"]
+ignore = [
+    { id = "RUSTSEC-2026-0543", reason = "Maintenance notice for the supported chrono API and SQLx integration; revisit when chrono support changes." },
+    { id = "RUSTSEC-2024-0449", reason = "Maintenance notice for Gaman's serde_yaml parser; revisit when the schema and migration YAML implementation changes." },
+]
 
 [licenses]
 confidence-threshold = 0.8

@@ -1,6 +1,6 @@
 [package]
 name = "mool"
-version = "0.2.14"
+version = "0.2.15"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -16,8 +16,8 @@ no-default-features = true
 [features]
 default = []
 postgres = ["sqlx/postgres", "gaman/postgres", "gaman/fs", "pgvector?/sqlx"]
-mysql = ["sqlx/mysql", "gaman/mysql", "gaman/fs"]
-mariadb = ["sqlx/mysql", "gaman/mariadb", "gaman/fs"]
+mysql = ["sqlx/mysql-rsa", "gaman/mysql", "gaman/fs"]
+mariadb = ["sqlx/mysql-rsa", "gaman/mariadb", "gaman/fs"]
 sqlite = ["sqlx/sqlite", "gaman/sqlite", "gaman/fs"]
 migrations = ["gaman/fs", "gaman/db"]
 compile-contracts = []
@@ -35,7 +35,7 @@ gaman.workspace = true
 gaman-core.workspace = true
 indexmap.workspace = true
 pgvector = { workspace = true, optional = true }
-mool-macros = { path = "../mool-macros", version = "0.1.9" }
+mool-macros = { path = "../mool-macros", version = "0.1.10" }
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true

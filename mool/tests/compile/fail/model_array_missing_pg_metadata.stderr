@@ -19,7 +19,7 @@ help: the trait `PgHasArrayType` is not implemented for `ScalarOnly`
             (T1, T2, T3, T4, T5)
             (T1, T2, T3, T4, T5, T6)
           and $N others
-  = note: required for `Vec<ScalarOnly>` to implement `Type<sqlx::Postgres>`
+  = note: required for `Vec<ScalarOnly>` to implement `sqlx::Type<sqlx::Postgres>`
 note: required by a bound in `native_array_sql_type`
  --> src/schema/__private.rs
   |

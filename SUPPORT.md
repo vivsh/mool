@@ -1,8 +1,8 @@
 # Support Policy
 
-Mool supports the latest published `0.2.x` release on Rust 1.88 and later.
-Patch releases preserve the published `0.2.x` public API unless a release note
-explicitly identifies a security or correctness exception.
+Mool 0.2.15 requires Rust 1.94 and SQLx 0.9.1. Earlier `0.2.x` releases
+supported Rust 1.88 and SQLx 0.8. Patch releases preserve the published API
+unless a release note explicitly identifies an approved compatibility exception.
 
 ## Database Matrix
 

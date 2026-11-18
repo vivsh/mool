@@ -510,7 +510,11 @@ fn configuration_error(reason: &str) -> DbError {
 }
 
 /// Observes a SQLx operation without exposing SQL text or bound values.
-async fn observe_query<T, F>(operation: DbOperation, sql: &str, future: F) -> Result<T, sqlx::Error>
+async fn observe_query<T, F>(
+    operation: DbOperation,
+    fingerprint: u64,
+    future: F,
+) -> Result<T, sqlx::Error>
 where
     F: Future<Output = Result<T, sqlx::Error>>,
 {
@@ -520,13 +524,13 @@ where
     #[cfg(feature = "tracing")]
     tracing::debug!(
         operation = %operation,
-        query_fingerprint = query_fingerprint(sql),
+        query_fingerprint = fingerprint,
         elapsed_micros = started.elapsed().as_micros() as u64,
         success = result.is_ok(),
         "database operation completed"
     );
     #[cfg(not(feature = "tracing"))]
-    let _ = (operation, sql);
+    let _ = (operation, fingerprint);
     result
 }
 
@@ -535,6 +539,12 @@ fn query_fingerprint(sql: &str) -> u64 {
     let mut hasher = twox_hash::XxHash64::with_seed(0);
     hasher.write(sql.as_bytes());
     hasher.finish()
+}
+
+#[cfg(not(feature = "tracing"))]
+#[inline]
+fn query_fingerprint(_sql: &str) -> u64 {
+    0
 }
 
 #[derive(Debug, Clone)]
@@ -618,8 +628,9 @@ impl DbPool {
 impl DbSession for DbPool {
     async fn execute(&mut self, qs: Statement) -> Result<u64, DbError> {
         let (sql, args) = qs.into_parts().map_err(DbError::from)?;
-        let query = sqlx::query_with(&sql, args);
-        let res = observe_query(DbOperation::Execute, &sql, query.execute(&self.pool))
+        let fingerprint = query_fingerprint(&sql);
+        let query = sqlx::query_with(sqlx::AssertSqlSafe(sql), args);
+        let res = observe_query(DbOperation::Execute, fingerprint, query.execute(&self.pool))
             .await
             .map_err(|error| DbError::from_sqlx(DbOperation::Execute, error))?;
         Ok(res.rows_affected())
@@ -630,10 +641,15 @@ impl DbSession for DbPool {
         for<'d> T: sqlx::Decode<'d, Database> + sqlx::Type<Database> + Send + Unpin,
     {
         let (sql, args) = qs.into_parts().map_err(DbError::from)?;
-        let query = sqlx::query_scalar_with(&sql, args);
-        observe_query(DbOperation::FetchScalar, &sql, query.fetch_one(&self.pool))
-            .await
-            .map_err(|error| DbError::from_sqlx(DbOperation::FetchScalar, error))
+        let fingerprint = query_fingerprint(&sql);
+        let query = sqlx::query_scalar_with(sqlx::AssertSqlSafe(sql), args);
+        observe_query(
+            DbOperation::FetchScalar,
+            fingerprint,
+            query.fetch_one(&self.pool),
+        )
+        .await
+        .map_err(|error| DbError::from_sqlx(DbOperation::FetchScalar, error))
     }
 
     async fn fetch_one<M>(&mut self, qs: Statement) -> Result<M, DbError>
@@ -641,10 +657,15 @@ impl DbSession for DbPool {
         M: for<'r> sqlx::FromRow<'r, Row> + Send + Unpin,
     {
         let (sql, args) = qs.into_parts().map_err(DbError::from)?;
-        let query = sqlx::query_as_with(&sql, args);
-        observe_query(DbOperation::FetchOne, &sql, query.fetch_one(&self.pool))
-            .await
-            .map_err(|error| DbError::from_sqlx(DbOperation::FetchOne, error))
+        let fingerprint = query_fingerprint(&sql);
+        let query = sqlx::query_as_with(sqlx::AssertSqlSafe(sql), args);
+        observe_query(
+            DbOperation::FetchOne,
+            fingerprint,
+            query.fetch_one(&self.pool),
+        )
+        .await
+        .map_err(|error| DbError::from_sqlx(DbOperation::FetchOne, error))
     }
 
     async fn fetch_all<M>(&mut self, qs: Statement) -> Result<Vec<M>, DbError>
@@ -652,10 +673,15 @@ impl DbSession for DbPool {
         M: for<'r> sqlx::FromRow<'r, Row> + Send + Unpin,
     {
         let (sql, args) = qs.into_parts().map_err(DbError::from)?;
-        let query = sqlx::query_as_with(&sql, args);
-        observe_query(DbOperation::FetchAll, &sql, query.fetch_all(&self.pool))
-            .await
-            .map_err(|error| DbError::from_sqlx(DbOperation::FetchAll, error))
+        let fingerprint = query_fingerprint(&sql);
+        let query = sqlx::query_as_with(sqlx::AssertSqlSafe(sql), args);
+        observe_query(
+            DbOperation::FetchAll,
+            fingerprint,
+            query.fetch_all(&self.pool),
+        )
+        .await
+        .map_err(|error| DbError::from_sqlx(DbOperation::FetchAll, error))
     }
 
     async fn fetch_optional<M>(&mut self, qs: Statement) -> Result<Option<M>, DbError>
@@ -663,10 +689,11 @@ impl DbSession for DbPool {
         M: for<'r> sqlx::FromRow<'r, Row> + Send + Unpin,
     {
         let (sql, args) = qs.into_parts().map_err(DbError::from)?;
-        let query = sqlx::query_as_with(&sql, args);
+        let fingerprint = query_fingerprint(&sql);
+        let query = sqlx::query_as_with(sqlx::AssertSqlSafe(sql), args);
         observe_query(
             DbOperation::FetchOptional,
-            &sql,
+            fingerprint,
             query.fetch_optional(&self.pool),
         )
         .await
@@ -677,10 +704,11 @@ impl DbSession for DbPool {
 impl DbSession for DbTransaction<'_> {
     async fn execute(&mut self, qs: Statement) -> Result<u64, DbError> {
         let (sql, args) = qs.into_parts().map_err(DbError::from)?;
-        let query = sqlx::query_with(&sql, args);
+        let fingerprint = query_fingerprint(&sql);
+        let query = sqlx::query_with(sqlx::AssertSqlSafe(sql), args);
         let res = observe_query(
             DbOperation::Execute,
-            &sql,
+            fingerprint,
             query.execute(&mut *self.transaction),
         )
         .await
@@ -693,10 +721,11 @@ impl DbSession for DbTransaction<'_> {
         for<'d> T: sqlx::Decode<'d, Database> + sqlx::Type<Database> + Send + Unpin,
     {
         let (sql, args) = qs.into_parts().map_err(DbError::from)?;
-        let query = sqlx::query_scalar_with(&sql, args);
+        let fingerprint = query_fingerprint(&sql);
+        let query = sqlx::query_scalar_with(sqlx::AssertSqlSafe(sql), args);
         observe_query(
             DbOperation::FetchScalar,
-            &sql,
+            fingerprint,
             query.fetch_one(&mut *self.transaction),
         )
         .await
@@ -708,10 +737,11 @@ impl DbSession for DbTransaction<'_> {
         M: for<'r> sqlx::FromRow<'r, Row> + Send + Unpin,
     {
         let (sql, args) = qs.into_parts().map_err(DbError::from)?;
-        let query = sqlx::query_as_with(&sql, args);
+        let fingerprint = query_fingerprint(&sql);
+        let query = sqlx::query_as_with(sqlx::AssertSqlSafe(sql), args);
         observe_query(
             DbOperation::FetchOne,
-            &sql,
+            fingerprint,
             query.fetch_one(&mut *self.transaction),
         )
         .await
@@ -723,10 +753,11 @@ impl DbSession for DbTransaction<'_> {
         M: for<'r> sqlx::FromRow<'r, Row> + Send + Unpin,
     {
         let (sql, args) = qs.into_parts().map_err(DbError::from)?;
-        let query = sqlx::query_as_with(&sql, args);
+        let fingerprint = query_fingerprint(&sql);
+        let query = sqlx::query_as_with(sqlx::AssertSqlSafe(sql), args);
         observe_query(
             DbOperation::FetchAll,
-            &sql,
+            fingerprint,
             query.fetch_all(&mut *self.transaction),
         )
         .await
@@ -738,10 +769,11 @@ impl DbSession for DbTransaction<'_> {
         M: for<'r> sqlx::FromRow<'r, Row> + Send + Unpin,
     {
         let (sql, args) = qs.into_parts().map_err(DbError::from)?;
-        let query = sqlx::query_as_with(&sql, args);
+        let fingerprint = query_fingerprint(&sql);
+        let query = sqlx::query_as_with(sqlx::AssertSqlSafe(sql), args);
         observe_query(
             DbOperation::FetchOptional,
-            &sql,
+            fingerprint,
             query.fetch_optional(&mut *self.transaction),
         )
         .await

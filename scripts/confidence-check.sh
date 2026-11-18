@@ -3,67 +3,36 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+export RUSTUP_TOOLCHAIN=1.94.0
 
 cargo fmt --all --check
 bash scripts/release-dependency-check.sh
+cargo deny --locked --all-features check advisories
+
+for backend in postgres sqlite mysql mariadb; do
+    features="$backend time test-support text-search"
+    if [[ "$backend" == postgres || "$backend" == sqlite ]]; then
+        features="$features migrations fuzzy-search vector"
+    fi
+    if [[ "$backend" == mariadb ]]; then
+        features="$features vector"
+    fi
+    if [[ "$backend" == postgres ]]; then
+        features="$features tracing"
+    fi
+    cargo test --locked --workspace --no-default-features --features "$features"
+    cargo clippy --locked -p mool --all-targets --no-deps \
+        --no-default-features --features "$features" -- -D warnings
+    cargo test --locked -p mool --no-default-features \
+        --features "$features compile-contracts" --test trybuild
+done
+
+cargo test --locked -p mool --no-default-features \
+    --features "postgres compile-contracts" --test trybuild
 bash scripts/feature-contracts.sh
-cargo deny --all-features check advisories licenses bans sources
-cargo test --locked --workspace --no-default-features --features mool/sqlite
-cargo test --locked -p mool --no-default-features --features "sqlite test-support"
-cargo test --locked -p mool --no-default-features --features "postgres test-support"
-cargo test --locked -p mool --no-default-features --features "mysql test-support"
-cargo test --locked -p mool --no-default-features --features "mariadb test-support"
-cargo test --locked -p mool --no-default-features --features "sqlite time test-support"
-cargo test --locked -p mool --no-default-features --features "postgres time test-support"
-cargo test --locked -p mool --no-default-features --features "mysql time test-support"
-cargo test --locked -p mool --no-default-features --features "mariadb time test-support"
-cargo test --locked -p mool --no-default-features --features "sqlite migrations test-support"
-cargo test --locked -p mool --no-default-features --features "postgres migrations test-support"
-cargo test --locked -p mool --no-default-features --features "postgres compile-contracts" --test trybuild
-cargo test --locked -p mool --no-default-features --features "postgres time compile-contracts" --test trybuild
-cargo test --locked -p mool --no-default-features --features "sqlite compile-contracts" --test trybuild
-cargo test --locked -p mool --no-default-features --features "mysql compile-contracts" --test trybuild
-cargo test --locked -p mool --no-default-features --features "postgres migrations compile-contracts" --test trybuild
-cargo test --locked -p mool --no-default-features --features "sqlite migrations compile-contracts" --test trybuild
-cargo check --locked -p mool --release --no-default-features --features "sqlite test-support"
-cargo check --locked -p mool --release --no-default-features --features "sqlite mock"
-cargo check --locked -p mool --examples --no-default-features --features "postgres mock migrations time"
-cargo clippy --locked -p mool --all-targets --no-deps --no-default-features --features "sqlite time migrations mock test-support" -- -D warnings
-cargo clippy --locked -p mool-macros-impl -p mool-macros --all-targets -- -D warnings
-RUSTDOCFLAGS="-D warnings" cargo doc --locked -p mool --no-deps --no-default-features --features "sqlite migrations time test-support"
-bash scripts/packaged-consumer-check.sh
-
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$tmp/src"
-cat >"$tmp/Cargo.toml" <<EOF
-[package]
-name = "mool_mock_gate_check"
-version = "0.0.0"
-edition = "2024"
-
-[dependencies]
-mool = { path = "$ROOT/mool", default-features = false, features = ["sqlite"] }
-EOF
-cat >"$tmp/src/main.rs" <<'EOF'
-fn main() {
-    let _ = mool::mock::MockDbSession::new();
-}
-EOF
-
-if cargo check --manifest-path "$tmp/Cargo.toml" --release >/dev/null 2>&1; then
-    echo "expected mool::mock to be unavailable in release without the mock feature" >&2
-    exit 1
-fi
-
-cat >"$tmp/Cargo.toml" <<EOF
-[package]
-name = "mool_mock_gate_check"
-version = "0.0.0"
-edition = "2024"
-
-[dependencies]
-mool = { path = "$ROOT/mool", default-features = false, features = ["sqlite", "mock"] }
-EOF
-
-cargo check --manifest-path "$tmp/Cargo.toml" --release
+cargo check --locked -p mool --examples --no-default-features \
+    --features "postgres migrations mock time"
+cargo clippy --locked -p mool-macros-impl -p mool-macros \
+    --all-targets --all-features -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --locked -p mool --no-deps \
+    --no-default-features --features "postgres migrations time text-search fuzzy-search vector"

@@ -1,6 +1,6 @@
 [package]
 name = "mool-macros"
-version = "0.1.9"
+version = "0.1.10"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -18,7 +18,7 @@ fuzzy-search = ["mool-macros-impl/fuzzy-search"]
 vector = ["mool-macros-impl/vector"]
 
 [dependencies]
-mool-macros-impl = { path = "../mool-macros-impl", version = "0.1.8" }
+mool-macros-impl = { path = "../mool-macros-impl", version = "0.1.9" }
 proc-macro-crate = "3.2"
 proc-macro2.workspace = true
 quote.workspace = true

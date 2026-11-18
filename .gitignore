@@ -1,5 +1,6 @@
 /target/
 **/target/
 **/Cargo.lock
+/benchmarks/orm-comparison/
 .env
 */target/

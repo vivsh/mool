@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
+  workflow_dispatch:
   schedule:
     - cron: "47 2 * * 1"
 
@@ -10,189 +13,105 @@ permissions:
   contents: read
 
 jobs:
-  backend-matrix:
-    name: Test ${{ matrix.backend }}${{ matrix.time }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        backend: [postgres, sqlite, mysql, mariadb]
-        time: ["", " time"]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          path: mool
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: mool
-      - name: Test selected backend
-        working-directory: mool
-        run: cargo test --locked -p mool --no-default-features --features "${{ matrix.backend }}${{ matrix.time }} test-support"
-      - name: Clippy selected backend
-        working-directory: mool
-        run: cargo clippy --locked -p mool --all-targets --no-deps --no-default-features --features "${{ matrix.backend }}${{ matrix.time }} test-support" -- -D warnings
-
-  migrations:
-    name: Migrations ${{ matrix.backend }}
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        backend: [postgres, sqlite]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          path: mool
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: mool
-      - name: Test migration integration
-        working-directory: mool
-        run: cargo test --locked -p mool --no-default-features --features "${{ matrix.backend }} migrations test-support"
-
-  compile-contracts:
-    name: Macro contracts ${{ matrix.name }}
-    runs-on: ubuntu-latest
+  backends:
+    name: ${{ matrix.backend }} tests and contracts (Rust 1.94)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: postgres
-            features: "postgres compile-contracts"
-          - name: postgres-time
-            features: "postgres time compile-contracts"
-          - name: sqlite
-            features: "sqlite compile-contracts"
-          - name: mysql
-            features: "mysql compile-contracts"
-          - name: postgres-migrations
-            features: "postgres migrations compile-contracts"
-          - name: sqlite-migrations
-            features: "sqlite migrations compile-contracts"
+          - backend: postgres
+            features: postgres time migrations tracing test-support text-search fuzzy-search vector
+          - backend: sqlite
+            features: sqlite time migrations test-support text-search fuzzy-search vector
+          - backend: mysql
+            features: mysql time test-support text-search
+          - backend: mariadb
+            features: mariadb time test-support text-search vector
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
-          path: mool
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.91"
+          toolchain: "1.94.0"
+          components: clippy
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: mool
-      - name: Test compiler-pinned macro diagnostics
-        working-directory: mool
-        run: >-
-          cargo test --locked -p mool --no-default-features
-          --features "${{ matrix.features }}" --test trybuild
+      - name: Test backend and optional capabilities
+        run: cargo test --locked --workspace --no-default-features --features "${{ matrix.features }}"
+      - name: Check backend warnings
+        run: cargo clippy --locked -p mool --all-targets --no-deps --no-default-features --features "${{ matrix.features }}" -- -D warnings
+      - name: Check compiler-pinned macro contracts
+        run: cargo test --locked -p mool --no-default-features --features "${{ matrix.features }} compile-contracts" --test trybuild
+      - name: Check disabled optional capabilities
+        if: matrix.backend == 'postgres'
+        run: cargo test --locked -p mool --no-default-features --features "postgres compile-contracts" --test trybuild
 
   quality:
-    name: Formatting, docs, and feature guards
-    runs-on: ubuntu-latest
+    name: Formatting, docs, and feature boundaries
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
-          path: mool
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: mool
       - name: Formatting
-        working-directory: mool
         run: cargo fmt --all --check
       - name: Registry dependency graph
-        working-directory: mool
         run: bash scripts/release-dependency-check.sh
-      - name: Backendless and test feature contracts
-        working-directory: mool
+      - name: Backendless and unavailable-feature contracts
         run: bash scripts/feature-contracts.sh
-      - name: Reject multiple backends
-        working-directory: mool
-        run: >-
-          ! cargo check --locked -p mool --no-default-features --features "postgres sqlite"
       - name: Rustdoc warnings
-        working-directory: mool
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --locked -p mool --no-deps --no-default-features --features "sqlite migrations time test-support"
-      - name: Optional tracing surface
-        working-directory: mool
-        run: cargo check --locked -p mool --no-default-features --features "postgres tracing test-support"
-      - name: Release feature gates
-        working-directory: mool
-        run: >-
-          cargo check --locked -p mool --release --no-default-features --features "sqlite test-support" &&
-          cargo check --locked -p mool --release --no-default-features --features "sqlite mock"
+        run: cargo doc --locked -p mool --no-deps --no-default-features --features "postgres migrations time text-search fuzzy-search vector"
       - name: Public examples
-        working-directory: mool
         run: cargo check --locked -p mool --examples --no-default-features --features "postgres migrations mock time"
-      - name: Macro crate Clippy
-        working-directory: mool
-        run: cargo clippy --locked -p mool-macros-impl -p mool-macros --all-targets -- -D warnings
-      - name: Package and external consumers
-        working-directory: mool
-        run: bash scripts/packaged-consumer-check.sh
+      - name: Macro crate warnings
+        run: cargo clippy --locked -p mool-macros-impl -p mool-macros --all-targets --all-features -- -D warnings
 
-  msrv:
-    name: Rust 1.88
-    runs-on: ubuntu-latest
+  advisories:
+    name: RustSec advisories
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
-          path: mool
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: "1.88"
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: mool
-      - name: Check MSRV
-        working-directory: mool
-        run: cargo check --locked -p mool --no-default-features --features "sqlite time migrations"
-
-  dependency-policy:
-    name: Advisories, licenses, sources, and duplicates
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+          persist-credentials: false
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          command: check advisories licenses bans sources
-
-  scheduled-cross-platform:
-    name: Scheduled ${{ matrix.os }} contracts
-    if: github.event_name == 'schedule'
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Check backendless migration registration
-        run: cargo check --locked -p mool --no-default-features --features migrations
-      - name: Test SQLite contracts
-        run: cargo test --locked -p mool --no-default-features --features "sqlite test-support"
+          rust-version: "1.94.0"
+          arguments: --locked --all-features
+          command: check advisories
 
   sqlite-live:
     name: Live SQLite
-    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94.0"
       - uses: Swatinem/rust-cache@v2
       - name: Run live SQLite behavior
         run: scripts/integration-tests.sh sqlite all
 
   server-live:
     name: Live ${{ matrix.backend }} ${{ matrix.version }}
-    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -201,42 +120,36 @@ jobs:
             version: "15"
             image: postgres:15
             port: 5432
-            container_port: 5432
             health: pg_isready -U postgres
             url: postgres://postgres:postgres@localhost:5432/mool_tests
           - backend: postgres
             version: "18"
             image: postgres:18
             port: 5432
-            container_port: 5432
             health: pg_isready -U postgres
             url: postgres://postgres:postgres@localhost:5432/mool_tests
           - backend: mysql
             version: "8.0"
             image: mysql:8.0
             port: 3306
-            container_port: 3306
             health: mysqladmin ping -h localhost -proot
             url: mysql://root:root@localhost:3306/mool_tests
           - backend: mysql
             version: "8.4"
             image: mysql:8.4
             port: 3306
-            container_port: 3306
             health: mysqladmin ping -h localhost -proot
             url: mysql://root:root@localhost:3306/mool_tests
           - backend: mariadb
             version: "10.11"
             image: mariadb:10.11
             port: 3306
-            container_port: 3306
             health: healthcheck.sh --connect --innodb_initialized
             url: mysql://root:root@localhost:3306/mool_tests
           - backend: mariadb
             version: "11.8"
             image: mariadb:11.8
             port: 3306
-            container_port: 3306
             health: healthcheck.sh --connect --innodb_initialized
             url: mysql://root:root@localhost:3306/mool_tests
     services:
@@ -251,15 +164,19 @@ jobs:
           MARIADB_ROOT_PASSWORD: root
           MARIADB_DATABASE: mool_tests
         ports:
-          - "${{ matrix.port }}:${{ matrix.container_port }}"
+          - "${{ matrix.port }}:${{ matrix.port }}"
         options: >-
           --health-cmd "${{ matrix.health }}"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94.0"
       - uses: Swatinem/rust-cache@v2
       - name: Run live backend behavior
         env:

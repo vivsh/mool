@@ -66,7 +66,7 @@ application's dev dependencies:
 ```toml
 [dev-dependencies]
 mool = { version = "0.2", features = ["postgres"] }
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "macros", "migrate"] }
+sqlx = { version = "0.9.1", default-features = false, features = ["runtime-tokio", "postgres", "macros", "migrate"] }
 ```
 
 Use `#[sqlx::test]` directly. SQLx's attribute expansion resolves the

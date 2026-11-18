@@ -5,6 +5,18 @@ Changelog structure and Rust semantic-versioning conventions.
 
 ## Unreleased
 
+## 0.2.15
+
+### Changed
+
+- Upgrade to Gaman 0.3.39 and SQLx 0.9.1; this patch explicitly raises the
+  minimum supported Rust version to 1.94. Consumers using SQLx directly must
+  use the 0.9 line.
+- Consolidate CI backend, migration, and compiler contracts; retain live
+  database tests and security audits, and run sanitizer fuzzing with nightly Rust.
+
+## Previous changes
+
 ### Changed
 
 - Register advanced search indexes as top-level Gaman opaque declarations while

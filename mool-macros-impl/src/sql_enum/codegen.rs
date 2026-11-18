@@ -196,7 +196,7 @@ fn generic_sqlx_impl(parsed: &ParsedSqlEnum, crate_path: &TokenStream) -> TokenS
         {
             fn encode_by_ref(
                 &self,
-                buf: &mut <DB as #crate_path::sqlx::Database>::ArgumentBuffer<'q>,
+                buf: &mut <DB as #crate_path::sqlx::Database>::ArgumentBuffer,
             ) -> Result<#crate_path::sqlx::encode::IsNull, #crate_path::sqlx::error::BoxDynError> {
                 #encode
             }

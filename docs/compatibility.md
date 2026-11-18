@@ -2,8 +2,10 @@
 
 ## Rust And Databases
 
-Mool's minimum supported Rust version is 1.88. Raising it requires a minor
-release and a changelog entry.
+Mool 0.2.15 requires Rust 1.94 and uses SQLx 0.9.1; consumers using SQLx
+directly must match that SQLx line. Earlier 0.2 releases supported Rust 1.88.
+The Rust minimum increase in 0.2.15 is an explicitly approved patch-release
+exception. Future increases require a minor release and a changelog entry.
 
 Supported database floors are PostgreSQL 15, MySQL 8.0, MariaDB 10.11, and
 SQLite 3.35. At most one backend feature may be selected. Query execution

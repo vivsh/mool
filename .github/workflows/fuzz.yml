@@ -2,7 +2,7 @@ name: Scheduled Fuzzing
 
 on:
   schedule:
-    - cron: "23 3 * * 1"
+    - cron: "23 3 1 * *"
   workflow_dispatch:
 
 permissions:
@@ -11,18 +11,21 @@ permissions:
 jobs:
   raw-query:
     name: Raw query placeholder fuzzing
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --locked
       - name: Fuzz raw SQL planning
-        run: cargo fuzz run raw_query -- -max_total_time=120
+        run: cargo +nightly fuzz run raw_query -- -max_total_time=120
       - name: Preserve corpus and crash artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: raw-query-fuzz-artifacts
           path: |

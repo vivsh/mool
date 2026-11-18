@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MOOL="$ROOT/mool"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}"
 LOCKFILES=(
     "$MOOL/tests/fixtures/backendless-consumer/Cargo.lock"
     "$MOOL/tests/fixtures/renamed-mool-consumer/Cargo.lock"
@@ -23,6 +24,10 @@ cargo check -p mool --no-default-features
 cargo check -p mool --no-default-features --features migrations
 cargo check -p mool --no-default-features --features "sqlite test-support"
 cargo check -p mool --no-default-features --features "postgres migrations test-support"
+if cargo check --locked -p mool --no-default-features --features "postgres sqlite" >/dev/null 2>&1; then
+    echo "expected multiple query backends to be rejected" >&2
+    exit 1
+fi
 cargo check --offline --manifest-path "$MOOL/tests/fixtures/backendless-consumer/Cargo.toml"
 cargo check --offline --manifest-path "$MOOL/tests/fixtures/renamed-mool-consumer/Cargo.toml"
 cargo check --offline --manifest-path "$MOOL/tests/fixtures/testing-consumer/Cargo.toml"
